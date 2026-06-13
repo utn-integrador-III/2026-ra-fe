@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'core/routes/app_routes.dart';
 import 'core/theme/app_theme.dart';
-import 'features/home/screens/home_screen.dart';
-import 'features/navigation/screens/navigation_screen.dart';
-import 'features/settings/screens/settings_screen.dart';
+import 'pages/home_screen.dart';
+import 'pages/navigation_screen.dart';
+import 'pages/settings_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
