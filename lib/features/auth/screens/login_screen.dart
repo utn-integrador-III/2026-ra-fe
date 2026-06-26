@@ -32,12 +32,10 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: _purple,
       body: Column(
         children: [
-          // ── Header púrpura
           Expanded(
             flex: 2,
             child: Stack(
               children: [
-                // Burbujas decorativas de fondo
                 Positioned(
                   top: -30,
                   right: -30,
@@ -48,13 +46,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   right: 30,
                   child: _bubble(80, Colors.white.withOpacity(0.08)),
                 ),
-                // Contenido centrado del header
+                // Contenido del header
                 SafeArea(
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Ícono en círculo blanco
                         Container(
                           width: 72,
                           height: 72,
@@ -94,7 +91,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
 
-          // ── Tarjeta blanca
           Expanded(
             flex: 3,
             child: Container(
@@ -138,7 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     _passwordField(),
                     const SizedBox(height: 10),
 
-                    // ¿Olvidaste tu contraseña?
                     Align(
                       alignment: Alignment.centerRight,
                       child: GestureDetector(
@@ -191,7 +186,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Divisor "O continúa con"
                     Row(
                       children: [
                         const Expanded(child: Divider(color: Color(0xFFE5E7EB))),
@@ -225,7 +219,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Logo de Google como SVG aproximado con letras de colores
                             _googleLogo(),
                             const SizedBox(width: 10),
                             const Text(
@@ -241,8 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // ¿No tienes cuenta? Regístrate aquí
+                    //Creación de la cuenta
                     Center(
                       child: RichText(
                         text: TextSpan(
@@ -278,8 +270,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
-  // ── Helpers de UI
 
   Widget _bubble(double size, Color color) {
     return Container(
@@ -374,7 +364,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Logo de Google con los 4 colores usando texto en RichText
   Widget _googleLogo() {
     return RichText(
       text: const TextSpan(
@@ -391,7 +380,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // ── Lógica de negocio
 
   Future<void> _handleLogin() async {
     final email = _emailController.text.trim();

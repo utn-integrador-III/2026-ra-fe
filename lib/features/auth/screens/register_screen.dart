@@ -35,7 +35,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       backgroundColor: _purple,
       body: Column(
         children: [
-          // ── Header púrpura ──────────────────────────────────────
           Expanded(
             flex: 2,
             child: Stack(
@@ -94,7 +93,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
 
-          // ── Tarjeta blanca ──────────────────────────────────────
           Expanded(
             flex: 3,
             child: Container(
@@ -198,7 +196,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    // ¿Ya tienes cuenta? Inicia sesión
+                    //Inicia sesión
                     Center(
                       child: RichText(
                         text: TextSpan(
@@ -235,7 +233,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // ── Helpers de UI ────────────────────────────────────────────────
 
   Widget _bubble(double size, Color color) {
     return Container(
@@ -334,8 +331,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // ── Lógica de negocio
-
   Future<void> _handleRegister() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
@@ -361,20 +356,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       // TODO: llamar POST /api/auth/register con { email, password }
-      // Ejemplo con Dio:
-      //
-      // final dio = Dio();
-      // final response = await dio.post(
-      //   '${Env.apiBaseUrl}/api/auth/register',
-      //   data: {'email': email, 'password': password},
-      // );
 
       await Future.delayed(const Duration(seconds: 1)); // simulación
 
       if (mounted) {
         _showSnackbar('Cuenta creada exitosamente ✓');
         await Future.delayed(const Duration(milliseconds: 800));
-        // Vuelve al login tras registrarse
         Navigator.pop(context);
       }
     } catch (e) {
