@@ -99,3 +99,8 @@ flutter run -d android
 - Integración de navegación basada en `go_router`.
 - Configuración de voz con `flutter_tts`.
 - Desarrollo de la pantalla de navegación y ajustes.
+
+
+# Endpoints
+Registro  →  nombre + correo + contraseña  →  POST /api/auth/register
+Login     →  correo + contraseña           →  POST /api/auth/login
