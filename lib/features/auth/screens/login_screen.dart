@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/services/auth_service.dart';
 
@@ -18,7 +17,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isGoogleLoading = false;
 
   final _authService = AuthService();
-  final _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _textGray = Color(0xFF6B7280);
@@ -375,7 +373,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-
     try {
       await _authService.login(email: email, password: password);
       if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.home);
@@ -388,27 +385,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleGoogleLogin() async {
     setState(() => _isGoogleLoading = true);
-
     try {
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        setState(() => _isGoogleLoading = false);
-        return; // Usuario canceló
-      }
-
-      final googleAuth = await googleUser.authentication;
-      final idToken = googleAuth.idToken;
-
-      if (idToken == null) {
-        _showSnackbar('No se pudo obtener el token de Google');
-        return;
-      }
-
-      await _authService.loginWithGoogle(idToken);
-
+      await _authService.loginWithGoogle();
       if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.home);
     } catch (e) {
-      _showSnackbar('Error con Google: ${e.toString()}');
+      _showSnackbar(e.toString());
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
     }

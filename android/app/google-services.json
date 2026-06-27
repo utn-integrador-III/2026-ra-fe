@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "732484081824",
+    "project_id": "pathar-e3fc0",
+    "storage_bucket": "pathar-e3fc0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:732484081824:android:ca30057ff2b201367251c5",
+        "android_client_info": {
+          "package_name": "com.example.u_2026_ra_fe"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "732484081824-ue6285045ces7270snlqmuppfqj4b9ph.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDB1D615GKFYl_p5Nsa8LaS9gx2n5f3WMc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "732484081824-ue6285045ces7270snlqmuppfqj4b9ph.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

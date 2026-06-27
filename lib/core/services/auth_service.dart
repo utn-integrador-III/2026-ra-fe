@@ -1,9 +1,10 @@
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService {
-  // Cambiá esta IP por la de tu servidor Ubuntu en la red local
-  static const String _baseUrl = 'http://192.168.0.17:8000'; // 10.0.2.2 = localhost desde emulador Android
+  static const String _baseUrl = 'http://192.168.0.17:8000';
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: _baseUrl,
@@ -13,7 +14,10 @@ class AuthService {
   ));
 
   final _storage = const FlutterSecureStorage();
+  final _firebaseAuth = FirebaseAuth.instance;
+  final _googleSignIn = GoogleSignIn();
 
+  // ── Registro manual ──────────────────────────────────────────
   Future<Map<String, dynamic>> register({
     required String name,
     required String email,
@@ -32,6 +36,7 @@ class AuthService {
     }
   }
 
+  // ── Login manual ─────────────────────────────────────────────
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
@@ -48,15 +53,36 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
+  // ── Google con Firebase ───────────────────────────────────────
+  Future<Map<String, dynamic>> loginWithGoogle() async {
     try {
+      // 1. Abrir selector de cuenta
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) throw 'Inicio cancelado';
+
+      // 2. Obtener credenciales de Google
+      final googleAuth = await googleUser.authentication;
+
+      // 3. Autenticar con Firebase
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final userCredential = await _firebaseAuth.signInWithCredential(credential);
+
+      // 4. Obtener el Firebase ID Token para mandar al backend
+      final firebaseToken = await userCredential.user!.getIdToken();
+
+      // 5. Mandar al backend
       final response = await _dio.post('/api/auth/google', data: {
-        'id_token': idToken,
+        'id_token': firebaseToken,
       });
       await _saveToken(response.data['access_token']);
       return response.data;
     } on DioException catch (e) {
       throw _parseError(e);
+    } catch (e) {
+      throw e.toString();
     }
   }
 
@@ -69,6 +95,8 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    await _googleSignIn.signOut();
+    await _firebaseAuth.signOut();
     await _storage.delete(key: 'access_token');
   }
 
@@ -79,7 +107,7 @@ class AuthService {
     }
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
-      return 'No se pudo conectar al servidor. Verificá tu conexión.';
+      return 'No se pudo conectar al servidor.';
     }
     return 'Error inesperado. Intentá de nuevo.';
   }

@@ -5,6 +5,7 @@ import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'pages/navigation_screen.dart';
 import 'pages/settings_screen.dart';
+import 'features/auth/screens/auth_tabs_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -16,8 +17,8 @@ class App extends StatelessWidget {
       theme: AppTheme.theme,
       initialRoute: AppRoutes.register,
       routes: {
-        AppRoutes.login: (_) => const LoginScreen(),
-        AppRoutes.register: (_) => const RegisterScreen(),
+        AppRoutes.register: (_) => const AuthTabsScreen(initialIndex: 0),
+        AppRoutes.login:    (_) => const AuthTabsScreen(initialIndex: 1),
         AppRoutes.navigation: (_) => const NavigationScreen(),
         AppRoutes.settings: (_) => const SettingsScreen(),
       },
