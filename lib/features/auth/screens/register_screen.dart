@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/routes/app_routes.dart';
+import '../../../core/services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -16,6 +17,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
+
+  final _authService = AuthService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _textGray = Color(0xFF6B7280);
@@ -61,11 +64,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             color: Colors.white,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.near_me,
-                            color: _purple,
-                            size: 34,
-                          ),
+                          child: const Icon(Icons.near_me, color: _purple, size: 34),
                         ),
                         const SizedBox(height: 14),
                         const Text(
@@ -80,10 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 6),
                         const Text(
                           'Tu guía inteligente de realidad aumentada',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                          ),
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ],
                     ),
@@ -119,7 +115,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 22),
 
-                    // Campo: Nombre
                     _fieldLabel('Nombre'),
                     const SizedBox(height: 6),
                     _inputField(
@@ -129,7 +124,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Campo: Correo electrónico
                     _fieldLabel('Correo electrónico'),
                     const SizedBox(height: 6),
                     _inputField(
@@ -140,7 +134,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Campo: Contraseña
                     _fieldLabel('Contraseña'),
                     const SizedBox(height: 6),
                     _passwordField(
@@ -151,7 +144,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Campo: Confirmar contraseña
                     _fieldLabel('Confirmar contraseña'),
                     const SizedBox(height: 6),
                     _passwordField(
@@ -162,7 +154,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    // Botón Crear cuenta
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -196,19 +187,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    //Inicia sesión
                     Center(
                       child: RichText(
                         text: TextSpan(
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: _textGray,
-                          ),
+                          style: const TextStyle(fontSize: 13, color: _textGray),
                           children: [
                             const TextSpan(text: '¿Ya tienes cuenta? '),
                             WidgetSpan(
                               child: GestureDetector(
-                                onTap: () => Navigator.pushReplacementNamed(context, AppRoutes.login),
+                                onTap: () => Navigator.pushReplacementNamed(
+                                    context, AppRoutes.login),
                                 child: const Text(
                                   'Inicia sesión',
                                   style: TextStyle(
@@ -233,25 +221,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  Widget _bubble(double size, Color color) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
 
-  Widget _bubble(double size, Color color) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-
-  Widget _fieldLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-        color: Color(0xFF9CA3AF),
-      ),
-    );
-  }
+  Widget _fieldLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF9CA3AF),
+        ),
+      );
 
   Widget _inputField({
     required TextEditingController controller,
@@ -269,8 +252,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         prefixIcon: Icon(prefixIcon, color: const Color(0xFFBEC3CF), size: 20),
         filled: true,
         fillColor: const Color(0xFFF5F3FD),
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -299,22 +281,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       decoration: InputDecoration(
         hintText: '••••••••',
         hintStyle: const TextStyle(color: Color(0xFFBEC3CF), fontSize: 18),
-        prefixIcon:
-            const Icon(Icons.lock_outline, color: Color(0xFFBEC3CF), size: 20),
+        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFBEC3CF), size: 20),
         suffixIcon: GestureDetector(
           onTap: onToggle,
           child: Icon(
-            obscure
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
+            obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
             color: const Color(0xFFBEC3CF),
             size: 20,
           ),
         ),
         filled: true,
         fillColor: const Color(0xFFF5F3FD),
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -355,17 +333,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: llamar POST /api/auth/register con { email, password }
-
-      await Future.delayed(const Duration(seconds: 1)); // simulación
+      await _authService.register(
+        name: name,
+        email: email,
+        password: password,
+      );
 
       if (mounted) {
         _showSnackbar('Cuenta creada exitosamente ✓');
         await Future.delayed(const Duration(milliseconds: 800));
-        Navigator.pop(context);
+        // Después del registro va directo al home
+        Navigator.pushReplacementNamed(context, AppRoutes.home);
       }
     } catch (e) {
-      _showSnackbar('Error al crear la cuenta: $e');
+      _showSnackbar(e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
