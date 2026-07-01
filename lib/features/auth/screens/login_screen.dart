@@ -364,6 +364,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    debugPrint('▶ HANDLE LOGIN TOCADO');
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 

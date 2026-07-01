@@ -6,6 +6,7 @@ import 'features/auth/screens/register_screen.dart';
 import 'pages/navigation_screen.dart';
 import 'pages/settings_screen.dart';
 import 'features/auth/screens/auth_tabs_screen.dart';
+import 'features/profile/screens/profile_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -19,6 +20,7 @@ class App extends StatelessWidget {
       routes: {
         AppRoutes.register: (_) => const AuthTabsScreen(initialIndex: 0),
         AppRoutes.login:    (_) => const AuthTabsScreen(initialIndex: 1),
+        AppRoutes.home:     (_) => const ProfileScreen(),
         AppRoutes.navigation: (_) => const NavigationScreen(),
         AppRoutes.settings: (_) => const SettingsScreen(),
       },

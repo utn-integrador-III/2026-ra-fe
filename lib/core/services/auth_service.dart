@@ -2,16 +2,22 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://192.168.0.17:8000';
+  static String get _baseUrl => dotenv.env['API_URL'] ?? 'http://localhost:8000';
 
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: _baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-    headers: {'Content-Type': 'application/json'},
-  ));
+  late final Dio _dio;
+
+  AuthService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: _baseUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+      headers: {'Content-Type': 'application/json'},
+    ));
+  }
 
   final _storage = const FlutterSecureStorage();
   final _firebaseAuth = FirebaseAuth.instance;
@@ -56,29 +62,35 @@ class AuthService {
   // ── Google con Firebase ───────────────────────────────────────
   Future<Map<String, dynamic>> loginWithGoogle() async {
     try {
-      // 1. Abrir selector de cuenta
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) throw 'Inicio cancelado';
+      debugPrint('▶ INICIO loginWithGoogle');
+      await _googleSignIn.signOut();
 
-      // 2. Obtener credenciales de Google
+      final googleUser = await _googleSignIn.signIn().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw 'Timeout: Google Sign-In no respondió';
+        },
+      );
+
+      if (googleUser == null) throw 'Usuario canceló';
+
       final googleAuth = await googleUser.authentication;
-
-      // 3. Autenticar con Firebase
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
 
-      // 4. Obtener el Firebase ID Token para mandar al backend
+      final userCredential = await _firebaseAuth.signInWithCredential(credential);
       final firebaseToken = await userCredential.user!.getIdToken();
 
-      // 5. Mandar al backend
       final response = await _dio.post('/api/auth/google', data: {
         'id_token': firebaseToken,
       });
+
       await _saveToken(response.data['access_token']);
       return response.data;
+    } on FirebaseAuthException catch (e) {
+      throw 'Error Firebase: ${e.code}';
     } on DioException catch (e) {
       throw _parseError(e);
     } catch (e) {
@@ -86,6 +98,23 @@ class AuthService {
     }
   }
 
+  // ── Perfil del usuario actual ─────────────────────────────────
+  Future<Map<String, dynamic>> getProfile() async {
+    try {
+      final token = await getToken();
+      if (token == null) throw 'No hay sesión activa';
+
+      final response = await _dio.get(
+        '/api/auth/profile',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  // ── Token storage ─────────────────────────────────────────────
   Future<void> _saveToken(String token) async {
     await _storage.write(key: 'access_token', value: token);
   }
@@ -101,6 +130,10 @@ class AuthService {
   }
 
   String _parseError(DioException e) {
+    debugPrint('▶ STATUS: ${e.response?.statusCode}');
+    debugPrint('▶ DATA: ${e.response?.data}');
+    debugPrint('▶ TYPE: ${e.type}');
+
     if (e.response?.data != null) {
       final detail = e.response!.data['detail'];
       if (detail != null) return detail.toString();
