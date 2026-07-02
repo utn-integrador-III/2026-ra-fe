@@ -7,4 +7,5 @@ class AppRoutes {
   static const String register = '/register';
   static const String settings = '/settings';
   static const String navigation = '/navigation';
+  static const String search = '/search';
 }
