@@ -211,9 +211,10 @@ await authService.logout();
 
 | Problema | Estado | Solución |
 |---|---|---|
-| Google Sign-In no abre popup en HyperOS/MIUI | 🔍 Investigando | Habilitar permisos de ventana emergente en Ajustes |
 | `debugPrint` no visible en HyperOS | 🔍 Investigando | Usar `adb logcat` filtrando por tag |
 | IP del backend cambia al cambiar WiFi | ✅ Mitigado | Usar variable `API_URL` en `.env` |
+
+> **Google Sign-In (resuelto):** no era un problema de permisos de MIUI. Eran dos bugs reales: el botón en `auth_tabs_screen.dart` tenía la lógica de Google comentada (no llamaba a nada), y el backend verificaba el token con el endpoint equivocado (esperaba un token OAuth de Google, pero se manda un Firebase ID Token). Ver la sección de Firebase más abajo si a alguien más le pasa esto en otra máquina.
 
 ---
 
@@ -258,4 +259,22 @@ feature/push-notifications → Alertas y notificaciones
 - **Proyecto:** `pathar-e3fc0`
 - **Package name:** `com.example.u_2026_ra_fe`
 - **SHA-1 debug registrado:** `9C:24:41:27:31:09:4A:8C:D3:57:44:BB:9A:66:5B:CE:C4:BA:2B:60`
-- **Google services file:** `android/app/google-services.json`
+- **Google services file:** `android/app/google-services.json` (ya está en el repo)
+
+### ⚠️ Si sos nuevo en el proyecto: Google Sign-In no te va a andar hasta que hagas esto
+
+`google-services.json`, `firebase_options.dart` y `.env` ya están commiteados, así que con clonar + `flutter pub get` alcanza para **compilar** la app. Pero **el login con Google va a fallar** (error `ApiException: 10` / `DEVELOPER_ERROR`) porque el SHA-1 registrado arriba es el de la keystore de debug de otra máquina. Android genera una keystore de debug distinta y automática en cada PC, así que necesitás:
+
+1. **Pedir acceso al proyecto de Firebase** (`pathar-e3fc0`) — hablá con Ahian para que te agregue desde la consola de Firebase (⚙️ Configuración del proyecto → Usuarios y permisos).
+2. **Sacar el SHA-1 de tu propia keystore de debug:**
+   ```bash
+   # Windows
+   keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android -keypass android
+
+   # Linux/Mac
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+   ```
+3. En Firebase Console → ⚙️ Configuración del proyecto → tu app Android → **Agregar huella digital**, pegar el SHA-1 (y de paso el SHA-256) que te dio el comando anterior.
+4. Recompilar con `flutter run`. No hace falta descargar `google-services.json` de nuevo — el archivo del repo ya sirve para todos, solo cambia el SHA-1 registrado en la consola.
+
+> Nota: esto solo afecta al login con Google. El registro/login manual (correo + contraseña) funciona sin este paso.
