@@ -62,38 +62,52 @@ class AuthService {
   // ── Google con Firebase ───────────────────────────────────────
   Future<Map<String, dynamic>> loginWithGoogle() async {
     try {
-      debugPrint('▶ INICIO loginWithGoogle');
+      debugPrint('▶ PASO 1: Iniciando');
       await _googleSignIn.signOut();
+      debugPrint('▶ PASO 2: signOut OK');
 
       final googleUser = await _googleSignIn.signIn().timeout(
         const Duration(seconds: 15),
         onTimeout: () {
+          debugPrint('✗ TIMEOUT en signIn');
           throw 'Timeout: Google Sign-In no respondió';
         },
       );
+      debugPrint('▶ PASO 3: googleUser = $googleUser');
 
       if (googleUser == null) throw 'Usuario canceló';
 
       final googleAuth = await googleUser.authentication;
+      debugPrint('▶ PASO 4: idToken = ${googleAuth.idToken != null}');
+      debugPrint('▶ PASO 4: accessToken = ${googleAuth.accessToken != null}');
+
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
+      debugPrint('▶ PASO 5: Autenticando con Firebase...');
       final userCredential = await _firebaseAuth.signInWithCredential(credential);
+      debugPrint('▶ PASO 6: Firebase OK - ${userCredential.user?.email}');
+
       final firebaseToken = await userCredential.user!.getIdToken();
+      debugPrint('▶ PASO 7: Enviando al backend...');
 
       final response = await _dio.post('/api/auth/google', data: {
         'id_token': firebaseToken,
       });
+      debugPrint('▶ PASO 8: Backend OK');
 
       await _saveToken(response.data['access_token']);
       return response.data;
     } on FirebaseAuthException catch (e) {
+      debugPrint('✗ FirebaseAuthException: ${e.code} - ${e.message}');
       throw 'Error Firebase: ${e.code}';
     } on DioException catch (e) {
+      debugPrint('✗ DioError: ${e.response?.statusCode} ${e.response?.data}');
       throw _parseError(e);
     } catch (e) {
+      debugPrint('✗ Error: ${e.runtimeType} - $e');
       throw e.toString();
     }
   }

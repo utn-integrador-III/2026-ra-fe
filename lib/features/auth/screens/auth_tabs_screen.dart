@@ -678,13 +678,10 @@ class _LoginContentState extends State<_LoginContent> {
   Future<void> _handleGoogleLogin() async {
     setState(() => _isGoogleLoading = true);
     try {
-      // Google Sign-In — igual que en login_screen.dart
-      // final googleUser = await _googleSignIn.signIn();
-      // final googleAuth = await googleUser!.authentication;
-      // await _authService.loginWithGoogle(googleAuth.idToken!);
-      // if (mounted) Navigator.pushReplacementNamed(context, '/home');
+      await _authService.loginWithGoogle();
+      if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
-      _showSnackbar('Error con Google: ${e.toString()}');
+      _showSnackbar(e.toString());
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
     }
