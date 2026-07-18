@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 📱 PathAR — Frontend Mobile
 
 Aplicación móvil Flutter para el sistema inteligente de navegación peatonal con AR e IA.
@@ -259,3 +260,6 @@ feature/push-notifications → Alertas y notificaciones
 - **Package name:** `com.example.u_2026_ra_fe`
 - **SHA-1 debug registrado:** `9C:24:41:27:31:09:4A:8C:D3:57:44:BB:9A:66:5B:CE:C4:BA:2B:60`
 - **Google services file:** `android/app/google-services.json`
+=======
+# 2026-ra-fe
+>>>>>>> parent of 7fa0aec (Merge pull request #3 from utn-integrador-III/main)
