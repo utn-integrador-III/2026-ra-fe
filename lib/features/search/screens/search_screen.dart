@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/location_service.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -81,12 +82,9 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     try {
-      Position? position;
+      Position position;
       try {
-        position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 8),
-        );
+        position = await LocationService.getPrecisePosition();
       } catch (_) {
         position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.low,
@@ -95,7 +93,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
       if (mounted) {
         setState(() {
-          _currentLocation = LatLng(position!.latitude, position.longitude);
+          _currentLocation = LatLng(position.latitude, position.longitude);
           _isLoadingLocation = false;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
