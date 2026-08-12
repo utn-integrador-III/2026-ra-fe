@@ -21,9 +21,11 @@ Aplicación móvil Flutter para el sistema inteligente de navegación peatonal c
 | Flutter Dotenv | ^6.0.1 | Variables de entorno |
 | Provider | ^6.1.5 | Gestión de estado |
 | Go Router | ^17.3.0 | Navegación |
-| Camera | ^0.12.0 | Acceso a cámara (AR futuro) |
-| Flutter TTS | ^4.2.5 | Text-to-Speech |
+| Camera | ^0.12.0 | Acceso a cámara para el overlay AR |
+| Flutter TTS | ^4.2.5 | Text-to-Speech (instrucciones de voz) |
 | Permission Handler | ^12.0.3 | Permisos del sistema |
+| Flutter Compass | ^0.8.1 | Rumbo del dispositivo (brújula) para el AR por sensores |
+| Sensors Plus | ^7.0.0 | Sensores de movimiento |
 
 ---
 
@@ -155,12 +157,17 @@ Conecta con:
 
 ---
 
-### 📷 Navegación — `navigation_screen.dart` ⏳
-- Vista de cámara en tiempo real
-- Overlay AR con flechas de dirección *(pendiente)*
-- Integración YOLOv8 para detección de objetos *(pendiente)*
-- Integración SegFormer para detección de aceras *(pendiente)*
-- Panel inferior con instrucciones de navegación
+### 📷 Navegación — `navigation_screen.dart`
+- Vista de cámara en tiempo real como fondo de la navegación AR
+- Ruta real pedida al backend (`/api/navigation/route`), no una línea recta al destino
+- Flecha guía (`ArArrowOverlay`) que rota según el rumbo hacia el siguiente punto de la ruta, comparado contra la brújula del teléfono
+- Línea/alfombra azul (`ArPathOverlay`) dibujada sobre el camino real, solo visible cuando estás lo bastante cerca de una acera conocida
+- Suavizado de GPS y de brújula (evita saltos por ruido de sensores), con aviso visible cuando la precisión de alguno de los dos no es confiable (típico en interiores)
+- Recalculo automático de ruta si te alejás del camino, o si el GPS estaba poco confiable y de golpe mejora
+- Instrucciones por voz (`flutter_tts`) y avisos de giro con anticipación (FR-12/FR-13)
+- Botón de calibración de brújula (patrón en 8), igual que Google Maps
+- Integración YOLOv8 para detección de obstáculos *(pendiente)*
+- Integración de segmentación de aceras (SegFormer u otro modelo liviano) *(pendiente)*
 
 ---
 
@@ -207,6 +214,19 @@ await authService.logout();
 
 ---
 
+## 🧪 Pruebas
+
+```bash
+flutter test
+```
+
+Por ahora cubre los modelos de navegación (`RoutePoint`, `RouteStep`,
+`NavRoute.fromJson`) en `test/models/`. Se corre automáticamente junto con
+`flutter analyze` en GitHub Actions en cada push/PR — ver
+`.github/workflows/frontend-tests.yml`.
+
+---
+
 ## 🐛 Problemas conocidos
 
 | Problema | Estado | Solución |
@@ -221,15 +241,16 @@ await authService.logout();
 ## 🚀 Desarrollo futuro
 
 ```
-feature/navigation-ar     → Flechas AR sobre la cámara con flutter_ar
-feature/yolo-integration  → Detección de objetos en tiempo real
-feature/segformer         → Detección de aceras y cruces
-feature/voice-guidance    → Instrucciones por voz con flutter_tts
+feature/yolo-integration  → Detección de obstáculos en tiempo real (on-device)
+feature/sidewalk-segmentation → Detección visual de aceras para alinear mejor la línea AR
 feature/offline-maps      → Caché de tiles para uso sin internet
-feature/admin-panel       → Pantalla de gestión de ubicaciones (admin)
-feature/favorites-crud    → Agregar/editar/eliminar favoritos
+feature/favorites-crud    → Agregar/editar/eliminar favoritos (hoy el backend los deja vacíos)
 feature/push-notifications → Alertas y notificaciones
 ```
+
+Ya no están en esta lista porque ya están implementados: AR por sensores con
+flecha + línea de camino, instrucciones por voz, panel de administración
+(web, ver `2026-ra-api`).
 
 ---
 

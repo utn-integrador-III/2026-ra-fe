@@ -6,11 +6,12 @@ import '../../features/navigation/models/route_models.dart';
 class NavigationService {
   static String get _baseUrl => dotenv.env['API_URL'] ?? 'http://localhost:8000';
 
-  final _authService = AuthService();
+  late final AuthService _authService;
   late final Dio _dio;
 
-  NavigationService() {
-    _dio = Dio(BaseOptions(
+  NavigationService({Dio? dio, AuthService? authService}) {
+    _authService = authService ?? AuthService();
+    _dio = dio ?? Dio(BaseOptions(
       baseUrl: _baseUrl,
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),

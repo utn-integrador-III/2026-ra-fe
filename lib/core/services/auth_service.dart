@@ -9,19 +9,23 @@ class AuthService {
   static String get _baseUrl => dotenv.env['API_URL'] ?? 'http://localhost:8000';
 
   late final Dio _dio;
+  late final FlutterSecureStorage _storage;
 
-  AuthService() {
-    _dio = Dio(BaseOptions(
+  AuthService({Dio? dio, FlutterSecureStorage? storage}) {
+    _dio = dio ?? Dio(BaseOptions(
       baseUrl: _baseUrl,
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
       headers: {'Content-Type': 'application/json'},
     ));
+    _storage = storage ?? const FlutterSecureStorage();
   }
 
-  final _storage = const FlutterSecureStorage();
-  final _firebaseAuth = FirebaseAuth.instance;
-  final _googleSignIn = GoogleSignIn();
+  FirebaseAuth? _firebaseAuthInstance;
+  FirebaseAuth get _firebaseAuth => _firebaseAuthInstance ??= FirebaseAuth.instance;
+
+  GoogleSignIn? _googleSignInInstance;
+  GoogleSignIn get _googleSignIn => _googleSignInInstance ??= GoogleSignIn();
 
   // ── Registro manual ──────────────────────────────────────────
   Future<Map<String, dynamic>> register({

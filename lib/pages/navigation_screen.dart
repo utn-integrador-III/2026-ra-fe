@@ -20,6 +20,8 @@ const double _kArrivalRadiusM = 10.0; // a esta distancia del destino final, "ll
 const double _kRecalculateThresholdM = 35.0; // si te alejás esto del tramo, recalcular
 const Duration _kRecalculateCooldown = Duration(seconds: 12);
 const double _kOnPathThresholdM = 15.0; // la línea azul solo se dibuja si estás así de cerca de una acera real
+const double _kFullLookaheadThresholdM = 6.0; // por debajo de esto se muestra el giro siguiente; por arriba, solo el tramo de entrada (evita que la alfombra se vea "doblada" cuando estás lejos del camino, ej. dentro de un aula)
+const double _kGoodAccuracyM = 10.0; // precisión GPS considerada confiable
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -48,6 +50,8 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   double? _lastRawHeading;
   double _instabilityScore = 0; // sube con saltos bruscos crudos, baja con lecturas estables
   bool get _compassUnstable => _instabilityScore >= 6;
+  bool get _gpsUnreliable => (_currentPosition?.accuracy ?? 0) > _kOnPathThresholdM;
+  bool _hadPoorAccuracy = false; // si la ruta se armó/venía guiando con GPS malo, forzar un recálculo apenas mejore
   Position? _currentPosition;
   double? _smLat; // posición suavizada (reduce el salto/jitter del GPS crudo)
   double? _smLng;
@@ -266,6 +270,21 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     final lng = _smLng!;
 
     setState(() => _currentPosition = pos);
+
+    // Si la ruta se pidió (o se venía guiando) con GPS poco confiable —
+    // típico dentro de un edificio— y la señal recién mejoró de golpe al
+    // salir, el tramo/giro inicial puede haber quedado mal calculado con
+    // esa posición de origen imprecisa. En vez de esperar a que "te alejaste
+    // del tramo" lo note solo, forzamos un recálculo apenas la precisión
+    // vuelve a ser confiable.
+    if (pos.accuracy > _kOnPathThresholdM) {
+      _hadPoorAccuracy = true;
+    } else if (_hadPoorAccuracy && pos.accuracy <= _kGoodAccuracyM) {
+      _hadPoorAccuracy = false;
+      _lastRecalculate = DateTime.now();
+      _recalculate(lat, lng);
+      return;
+    }
 
     final points = _route!.points;
     final steps = _route!.steps;
@@ -510,7 +529,14 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
             currentLat: _smLat!,
             currentLng: _smLng!,
             deviceHeadingDeg: _deviceHeading,
-            pathPoints: _route!.points.sublist((_currentStepIndex + 1).clamp(0, _route!.points.length - 1)),
+            // Lejos del camino (ej. dentro de un aula): solo mostrar el tramo
+            // de entrada, recto, para no mezclar el rumbo hacia ese punto con
+            // el de un giro más adelante (eso es lo que se veía "doblado").
+            // Ya sobre el camino: mostrar el giro siguiente con más anticipación.
+            pathPoints: _route!.points
+                .sublist((_currentStepIndex + 1).clamp(0, _route!.points.length - 1))
+                .take(_distanceToRouteM() <= _kFullLookaheadThresholdM ? 3 : 1)
+                .toList(),
           ),
 
         // ── Flecha guía ──
@@ -547,31 +573,64 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           ),
         ),
 
-        // ── Aviso de brújula inestable (interferencia magnética) ──
-        if (_compassUnstable)
+        // ── Avisos de confiabilidad (GPS pobre y/o brújula inestable) ──
+        if (_gpsUnreliable || _compassUnstable)
           Positioned(
             top: 68, left: 12, right: 12,
-            child: GestureDetector(
-              onTap: _showCompassCalibration,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade800.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Brújula inestable (¿hay algo metálico/electrónico cerca?). Tocá para calibrar.',
-                        style: TextStyle(color: Colors.white, fontSize: 12.5),
+            child: Column(
+              children: [
+                // GPS y brújula dependen de señal satelital y del magnetómetro
+                // real del teléfono — adentro de un edificio (paredes, cerca
+                // de una laptop, etc.) ambos pueden fallar sin que sea un bug
+                // de la app; este aviso lo deja explícito en vez de dejar que
+                // la flecha/línea simplemente apunten "raro" sin explicación.
+                if (_gpsUnreliable)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade800.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.gps_not_fixed, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'GPS poco preciso para guiarte adentro de un edificio. Probá afuera, a cielo abierto.',
+                              style: TextStyle(color: Colors.white, fontSize: 12.5),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                if (_compassUnstable)
+                  GestureDetector(
+                    onTap: _showCompassCalibration,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade800.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Brújula inestable (¿hay algo metálico/electrónico cerca?). Tocá para calibrar.',
+                              style: TextStyle(color: Colors.white, fontSize: 12.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
 
@@ -620,7 +679,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                     child: Text(
                       'Precisión GPS: ±${_currentPosition!.accuracy.round()} m',
                       style: TextStyle(
-                        color: _currentPosition!.accuracy <= 10 ? Colors.greenAccent : Colors.amberAccent,
+                        color: _currentPosition!.accuracy <= _kGoodAccuracyM ? Colors.greenAccent : Colors.amberAccent,
                         fontSize: 11,
                       ),
                     ),
