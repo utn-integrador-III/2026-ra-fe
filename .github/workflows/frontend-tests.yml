@@ -2,7 +2,7 @@ name: Frontend Tests
 
 on:
   push:
-    branches: [main, Dev-Ahian]
+    branches: [main, dev-Ahian]
   pull_request:
     branches: [main]
 
