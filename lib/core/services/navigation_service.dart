@@ -96,6 +96,17 @@ class NavigationService {
     }
   }
 
+  Future<List<NavRoute>> getHistory() async {
+    try {
+      final response = await _dio.get('/api/navigation/history', options: await _authOptions());
+      return (response.data as List)
+          .map((r) => NavRoute.fromJson(r as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
   String _parseError(DioException e) {
     if (e.response?.data != null && e.response!.data is Map) {
       final detail = (e.response!.data as Map)['detail'];

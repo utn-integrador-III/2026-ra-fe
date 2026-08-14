@@ -12,6 +12,7 @@ class ArPathOverlay extends StatelessWidget {
   final List<RoutePoint> pathPoints; // próximos waypoints, en orden
   final double fovDeg;
   final double maxLookaheadM;
+  final bool danger; // la IA de percepción detectó un obstáculo en el tramo
 
   const ArPathOverlay({
     super.key,
@@ -21,6 +22,7 @@ class ArPathOverlay extends StatelessWidget {
     required this.pathPoints,
     this.fovDeg = 60,
     this.maxLookaheadM = 35,
+    this.danger = false,
   });
 
   @override
@@ -50,7 +52,7 @@ class ArPathOverlay extends StatelessWidget {
 
         if (screenPoints.length < 2) return const SizedBox.shrink();
 
-        return CustomPaint(size: size, painter: _CarpetPainter(screenPoints));
+        return CustomPaint(size: size, painter: _CarpetPainter(screenPoints, danger: danger));
       },
     );
   }
@@ -58,7 +60,8 @@ class ArPathOverlay extends StatelessWidget {
 
 class _CarpetPainter extends CustomPainter {
   final List<Offset> points;
-  _CarpetPainter(this.points);
+  final bool danger;
+  _CarpetPainter(this.points, {this.danger = false});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -78,7 +81,7 @@ class _CarpetPainter extends CustomPainter {
     }
 
     final fillPaint = Paint()
-      ..color = const Color(0xFF3B82F6).withOpacity(0.55)
+      ..color = (danger ? const Color(0xFFEF4444) : const Color(0xFF3B82F6)).withOpacity(0.55)
       ..style = PaintingStyle.fill;
     final borderPaint = Paint()
       ..color = Colors.white.withOpacity(0.7)

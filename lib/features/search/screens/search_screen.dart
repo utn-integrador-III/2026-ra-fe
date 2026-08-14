@@ -331,6 +331,20 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
+  Future<void> _addToFavorites(Map<String, dynamic> place) async {
+    try {
+      await _authService.addFavorite(
+        name: place['name'],
+        address: place['address'],
+        latitude: place['lat'],
+        longitude: place['lng'],
+      );
+      if (mounted) _showSnackbar('${place['name']} agregado a favoritos');
+    } catch (e) {
+      if (mounted) _showSnackbar('No se pudo agregar a favoritos');
+    }
+  }
+
   // Escala de marcadores según el zoom: puntos chicos alejado, pines completos cerca.
   double _markerSize({double min = 10, double max = 44, double minZoom = 12, double maxZoom = 18}) {
     final t = ((_zoom - minZoom) / (maxZoom - minZoom)).clamp(0.0, 1.0);
@@ -889,6 +903,13 @@ class _SearchScreenState extends State<SearchScreen> {
                   style: const TextStyle(fontSize: 10, color: _gray),
                 ),
               ],
+            ),
+            IconButton(
+              onPressed: () => _addToFavorites(place),
+              icon: const Icon(Icons.favorite_border, size: 18, color: _gray),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.only(left: 6),
             ),
           ],
         ),

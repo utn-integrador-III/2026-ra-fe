@@ -111,6 +111,20 @@ void main() {
     expect(route.id, 'route-1');
   });
 
+  test('getHistory devuelve la lista de rutas parseadas', () async {
+    when(() => dio.get('/api/navigation/history', options: any(named: 'options'))).thenAnswer(
+      (_) async => Response(
+        data: [_routeJson('route-1'), _routeJson('route-2')],
+        statusCode: 200,
+        requestOptions: RequestOptions(path: '/api/navigation/history'),
+      ),
+    );
+
+    final routes = await service.getHistory();
+    expect(routes, hasLength(2));
+    expect(routes.map((r) => r.id), containsAll(['route-1', 'route-2']));
+  });
+
   test('requestRoute lanza el detail del backend si no hay ruta posible', () async {
     when(() => dio.post('/api/navigation/route',
         data: any(named: 'data'), options: any(named: 'options'))).thenThrow(

@@ -132,6 +132,95 @@ class AuthService {
     }
   }
 
+  // ── Editar perfil ───────────────────────────────────────────────
+  Future<Map<String, dynamic>> updateProfile({required String name}) async {
+    try {
+      final response = await _dio.put(
+        '/api/auth/profile',
+        data: {'name': name},
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  // ── Preferencias ─────────────────────────────────────────────
+  Future<Map<String, dynamic>> getPreferences() async {
+    try {
+      final response = await _dio.get('/api/preferences', options: await _authOptions());
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> updatePreferences({
+    bool? voiceGuidanceEnabled,
+    double? walkingSpeedMps,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/api/preferences',
+        data: {
+          if (voiceGuidanceEnabled != null) 'voice_guidance_enabled': voiceGuidanceEnabled,
+          if (walkingSpeedMps != null) 'walking_speed_mps': walkingSpeedMps,
+        },
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  // ── Favoritos ────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getFavorites() async {
+    try {
+      final response = await _dio.get('/api/favorites', options: await _authOptions());
+      return List<Map<String, dynamic>>.from(response.data['favorites']);
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> addFavorite({
+    required String name,
+    String? address,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/api/favorites',
+        data: {
+          'name': name,
+          'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+        },
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<void> deleteFavorite(String id) async {
+    try {
+      await _dio.delete('/api/favorites/$id', options: await _authOptions());
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Options> _authOptions() async {
+    final token = await getToken();
+    return Options(headers: {'Authorization': 'Bearer $token'});
+  }
+
   // ── Token storage ─────────────────────────────────────────────
   Future<void> _saveToken(String token) async {
     await _storage.write(key: 'access_token', value: token);
