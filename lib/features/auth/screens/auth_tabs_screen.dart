@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:pathar_fe/core/services/auth_service.dart';
-import 'login_screen.dart';
-import 'register_screen.dart';
 
 class AuthTabsScreen extends StatefulWidget {
   /// Índice inicial: 0 = Crear cuenta, 1 = Iniciar sesión

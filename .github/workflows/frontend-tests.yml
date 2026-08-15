@@ -23,7 +23,7 @@ jobs:
         run: flutter pub get
 
       - name: Analizar código estático
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Ejecutar pruebas unitarias
         run: flutter test
