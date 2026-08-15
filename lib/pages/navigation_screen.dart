@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../core/services/navigation_service.dart';
 import '../core/services/location_service.dart';
@@ -30,7 +31,16 @@ const double _kGoodAccuracyM = 10.0; // precisión GPS considerada confiable
 const double _kObstacleProximityThreshold = 0.35; // qué tan "grande" (cerca) debe verse un objeto centrado para alertar
 const Duration _kObstacleAnnounceCooldown = Duration(seconds: 4);
 const Duration _kSurroundingsAnnounceCooldown = Duration(seconds: 8);
-const Duration _kLabelFrameInterval = Duration(seconds: 3); // el etiquetado del entorno corre más espaciado que la detección de obstáculos
+const Duration _kLabelFrameInterval = Duration(milliseconds: 1500); // el etiquetado del entorno corre más espaciado que la detección de obstáculos
+
+// Etiquetas de ML Kit Image Labeling que indican que la cámara está
+// mirando una superficie caminable — la línea AR solo se dibuja si la IA
+// reconoció alguna de estas recientemente, no solo por cercanía GPS.
+const Set<String> _kGroundLabels = {
+  'road', 'asphalt', 'sidewalk', 'path', 'walkway', 'pavement',
+  'floor', 'flooring', 'ground', 'street', 'curb', 'tarmac',
+  'concrete', 'driveway', 'footpath', 'lane',
+};
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -66,6 +76,19 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
   StreamSubscription<CompassEvent>? _compassSub;
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<AccelerometerEvent>? _accelSub;
+
+  // Inclinación (pitch) del teléfono, relativa a como estaba al calibrar —
+  // se usa para que la línea AR se pegue al piso real en vez de una posición
+  // fija en pantalla. Si en el teléfono la línea reacciona al revés al
+  // inclinar la cámara (sube cuando debería bajar), invertir este signo.
+  static const double _kPitchSign = 1.0;
+  double _rawPitchDeg = 0;
+  double _pitchBaselineDeg = 0;
+  bool _pitchCalibrated = false;
+  double get _devicePitchDeg => _kPitchSign * (_rawPitchDeg - _pitchBaselineDeg);
+
+  bool get _seesGround => _surroundingLabels.any((l) => _kGroundLabels.contains(l.toLowerCase()));
 
   double _deviceHeading = 0;
   double _smSinH = 0, _smCosH = 1; // suavizado circular de la brújula (evita saltos por ruido del magnetómetro)
@@ -100,6 +123,35 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         setState(() => _updateHeading(event.heading!));
       }
     });
+    _accelSub = accelerometerEventStream().listen((event) {
+      if (!mounted) return;
+      final raw = math.atan2(event.z, event.y) * 180 / math.pi;
+      setState(() {
+        if (!_pitchCalibrated) {
+          // Primera lectura real: se toma como "cero" (cómo sostenías el
+          // teléfono al empezar a navegar), en vez de asumir un ángulo fijo.
+          _rawPitchDeg = raw;
+          _pitchBaselineDeg = raw;
+          _pitchCalibrated = true;
+        } else {
+          // El acelerómetro solo es ruidoso lectura a lectura; sin este
+          // suavizado la línea AR tiembla todo el tiempo aunque el teléfono
+          // esté quieto (mismo truco que ya se usa para brújula y GPS).
+          const alpha = 0.12;
+          _rawPitchDeg = _rawPitchDeg * (1 - alpha) + raw * alpha;
+        }
+      });
+    });
+  }
+
+  /// Vuelve a tomar la inclinación actual del teléfono como referencia
+  /// "horizontal" — usar si la línea AR quedó desalineada del piso después
+  /// de cambiar cómo sostenés el teléfono.
+  void _calibratePitch() {
+    setState(() => _pitchBaselineDeg = _rawPitchDeg);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Horizonte nivelado'), duration: Duration(seconds: 1)),
+    );
   }
 
   /// Suavizado circular (vía seno/coseno, no promedio directo de grados)
@@ -541,7 +593,14 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     return diff;
   }
 
+  bool _exiting = false;
+
   Future<void> _exitNavigation() async {
+    // Sin este guard, un doble toque en la X (algo común mientras se espera
+    // la respuesta de red) dispara dos Navigator.pop() casi simultáneos y
+    // el segundo choca contra la transición del primero (_debugLocked).
+    if (_exiting) return;
+    _exiting = true;
     if (_route != null && !_arrived) {
       try {
         await _navService.finishRoute(_route!.id);
@@ -555,6 +614,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     WidgetsBinding.instance.removeObserver(this);
     _compassSub?.cancel();
     _positionSub?.cancel();
+    _accelSub?.cancel();
     _cameraController?.dispose();
     _perception.dispose();
     _tts.stop();
@@ -632,9 +692,10 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         else
           Container(color: const Color(0xFF111318)),
 
-        // ── Línea/alfombra azul sobre el camino (solo si estás cerca de una acera real) ──
+        // ── Línea/alfombra azul sobre el camino (cerca de una acera real Y la
+        // IA reconoce piso/vereda en cámara ahora mismo, no solo por GPS) ──
         if (_route != null && _smLat != null && _smLng != null && !_arrived &&
-            _distanceToRouteM() <= _kOnPathThresholdM)
+            _distanceToRouteM() <= _kOnPathThresholdM && _seesGround)
           ArPathOverlay(
             currentLat: _smLat!,
             currentLng: _smLng!,
@@ -647,6 +708,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                 .sublist((_currentStepIndex + 1).clamp(0, _route!.points.length - 1))
                 .take(_distanceToRouteM() <= _kFullLookaheadThresholdM ? 3 : 1)
                 .toList(),
+            devicePitchDeg: _devicePitchDeg,
             danger: _obstacleAhead,
           ),
 
@@ -668,6 +730,8 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
               _circleButton(Icons.close, _exitNavigation),
               const SizedBox(width: 8),
               _circleButton(Icons.explore_outlined, _showCompassCalibration),
+              const SizedBox(width: 8),
+              _circleButton(Icons.center_focus_weak, _calibratePitch),
               const SizedBox(width: 8),
               Expanded(
                 child: Container(
