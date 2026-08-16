@@ -8,7 +8,10 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/services/location_service.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  final AuthService? authService;
+  final Dio? dio;
+
+  const SearchScreen({super.key, this.authService, this.dio});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -21,9 +24,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   final _searchController = TextEditingController();
   final _mapController = MapController();
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
   final _sheetController = DraggableScrollableController();
-  final _dio = Dio(BaseOptions(
+  late final _dio = widget.dio ?? Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 15),
     headers: {'User-Agent': 'PathAR/1.0 (educational project)'},

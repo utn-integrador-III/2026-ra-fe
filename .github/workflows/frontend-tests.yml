@@ -25,5 +25,23 @@ jobs:
       - name: Analizar código estático
         run: flutter analyze --no-fatal-infos
 
-      - name: Ejecutar pruebas unitarias
-        run: flutter test
+      - name: Ejecutar pruebas unitarias con cobertura
+        run: flutter test --coverage
+
+      - name: Calcular porcentaje de cobertura
+        run: |
+          # Igual que pytest-cov en el backend: líneas de código ejecutadas
+          # (LH) sobre líneas de código reales (LF, ya excluye blancos y
+          # comentarios). main.dart (entrypoint) y firebase_options.dart
+          # (generado) quedan fuera, igual que se excluye manage.py-style
+          # boilerplate en proyectos Python.
+          LH=$(awk -F: '/^LH:/{lh+=$2} END{print lh}' coverage/lcov.info)
+          LF=$(awk -F: '/^LF:/{lf+=$2} END{print lf}' coverage/lcov.info)
+          awk -v lh="$LH" -v lf="$LF" 'BEGIN{
+            pct = (lf > 0) ? (lh / lf * 100) : 0
+            printf "Líneas cubiertas: %d de %d líneas de código (%.2f%%)\n", lh, lf, pct
+            if (pct < 80) {
+              printf "Cobertura por debajo del 80%% requerido.\n"
+              exit 1
+            }
+          }'

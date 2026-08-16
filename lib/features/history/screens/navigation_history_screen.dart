@@ -3,14 +3,16 @@ import '../../../core/services/navigation_service.dart';
 import '../../navigation/models/route_models.dart';
 
 class NavigationHistoryScreen extends StatefulWidget {
-  const NavigationHistoryScreen({super.key});
+  final NavigationService? navService;
+
+  const NavigationHistoryScreen({super.key, this.navService});
 
   @override
   State<NavigationHistoryScreen> createState() => _NavigationHistoryScreenState();
 }
 
 class _NavigationHistoryScreenState extends State<NavigationHistoryScreen> {
-  final _navService = NavigationService();
+  late final _navService = widget.navService ?? NavigationService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _lightPurple = Color(0xFFF0EDFB);

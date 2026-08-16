@@ -43,16 +43,20 @@ const Set<String> _kGroundLabels = {
 };
 
 class NavigationScreen extends StatefulWidget {
-  const NavigationScreen({super.key});
+  final NavigationService? navService;
+  final AuthService? authService;
+  final FlutterTts? tts;
+
+  const NavigationScreen({super.key, this.navService, this.authService, this.tts});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
 }
 
 class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
-  final _navService = NavigationService();
-  final _authService = AuthService();
-  final _tts = FlutterTts();
+  late final _navService = widget.navService ?? NavigationService();
+  late final _authService = widget.authService ?? AuthService();
+  late final _tts = widget.tts ?? FlutterTts();
   bool _voiceGuidanceEnabled = true;
 
   bool _argsProcessed = false;
@@ -118,11 +122,16 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     _initTts();
     _loadVoicePreference();
     _initCamera();
-    _compassSub = FlutterCompass.events?.listen((event) {
-      if (event.heading != null && mounted) {
-        setState(() => _updateHeading(event.heading!));
-      }
-    });
+    try {
+      _compassSub = FlutterCompass.events?.listen((event) {
+        if (event.heading != null && mounted) {
+          setState(() => _updateHeading(event.heading!));
+        }
+      });
+    } catch (_) {
+      // Sin brújula disponible (p.ej. algunos emuladores) -> se sigue
+      // guiando sin rumbo, la flecha simplemente no rota.
+    }
     _accelSub = accelerometerEventStream().listen((event) {
       if (!mounted) return;
       final raw = math.atan2(event.z, event.y) * 180 / math.pi;
@@ -256,7 +265,12 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.request();
+    } catch (_) {
+      return;
+    }
     if (!status.isGranted) return;
 
     try {

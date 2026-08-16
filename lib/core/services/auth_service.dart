@@ -11,7 +11,7 @@ class AuthService {
   late final Dio _dio;
   late final FlutterSecureStorage _storage;
 
-  AuthService({Dio? dio, FlutterSecureStorage? storage}) {
+  AuthService({Dio? dio, FlutterSecureStorage? storage, GoogleSignIn? googleSignIn, FirebaseAuth? firebaseAuth}) {
     _dio = dio ?? Dio(BaseOptions(
       baseUrl: _baseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -19,6 +19,8 @@ class AuthService {
       headers: {'Content-Type': 'application/json'},
     ));
     _storage = storage ?? const FlutterSecureStorage();
+    _googleSignInInstance = googleSignIn;
+    _firebaseAuthInstance = firebaseAuth;
   }
 
   FirebaseAuth? _firebaseAuthInstance;

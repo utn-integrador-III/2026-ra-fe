@@ -40,6 +40,10 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
+  geolocator_platform_interface: ^4.2.7
+  camera_platform_interface: ^2.13.0
+  permission_handler_platform_interface: ^4.3.0
+  sensors_plus_platform_interface: ^2.0.1
 
 flutter:
   uses-material-design: true

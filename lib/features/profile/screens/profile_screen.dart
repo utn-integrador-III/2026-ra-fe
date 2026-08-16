@@ -7,15 +7,19 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final AuthService? authService;
+  final NavigationService? navService;
+  final Dio? placesDio;
+
+  const ProfileScreen({super.key, this.authService, this.navService, this.placesDio});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final _authService = AuthService();
-  final _navService = NavigationService();
+  late final _authService = widget.authService ?? AuthService();
+  late final _navService = widget.navService ?? NavigationService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _lightPurple = Color(0xFFF0EDFB);
@@ -38,9 +42,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadData() async {
     try {
       final token = await _authService.getToken();
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:8000';
-      final dio = Dio(BaseOptions(
-        baseUrl: baseUrl,
+      final dio = widget.placesDio ?? Dio(BaseOptions(
+        baseUrl: dotenv.env['API_URL'] ?? 'http://localhost:8000',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

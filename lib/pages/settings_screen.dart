@@ -3,14 +3,16 @@ import '../core/services/auth_service.dart';
 import '../core/routes/app_routes.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final AuthService? authService;
+
+  const SettingsScreen({super.key, this.authService});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _gray = Color(0xFF6B7280);
