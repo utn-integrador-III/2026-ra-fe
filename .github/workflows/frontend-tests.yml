@@ -30,18 +30,34 @@ jobs:
 
       - name: Calcular porcentaje de cobertura
         run: |
-          # Igual que pytest-cov en el backend: líneas de código ejecutadas
-          # (LH) sobre líneas de código reales (LF, ya excluye blancos y
-          # comentarios). main.dart (entrypoint) y firebase_options.dart
-          # (generado) quedan fuera, igual que se excluye manage.py-style
-          # boilerplate en proyectos Python.
-          LH=$(awk -F: '/^LH:/{lh+=$2} END{print lh}' coverage/lcov.info)
-          LF=$(awk -F: '/^LF:/{lf+=$2} END{print lf}' coverage/lcov.info)
-          awk -v lh="$LH" -v lf="$LF" 'BEGIN{
-            pct = (lf > 0) ? (lh / lf * 100) : 0
-            printf "Líneas cubiertas: %d de %d líneas de código (%.2f%%)\n", lh, lf, pct
-            if (pct < 80) {
-              printf "Cobertura por debajo del 80%% requerido.\n"
+          awk '
+            /^SF:/ { file = substr($0, 4) }
+            /^LF:/ { lf = substr($0, 4) + 0 }
+            /^LH:/ { lh = substr($0, 4) + 0 }
+            /^end_of_record/ {
+              miss = lf - lh
+              cover = (lf > 0) ? (lh / lf * 100) : 0
+              printf "%-55s %6d %6d %5.0f%%\n", file, lf, miss, cover
+            }
+          ' coverage/lcov.info | sort > /tmp/coverage_table.txt
+
+          TOTAL_LF=$(awk -F: '/^LF:/{s+=$2} END{print s}' coverage/lcov.info)
+          TOTAL_LH=$(awk -F: '/^LH:/{s+=$2} END{print s}' coverage/lcov.info)
+
+          echo "---------- coverage: flutter/dart ----------"
+          printf "%-55s %6s %6s %6s\n" "Name" "Stmts" "Miss" "Cover"
+          printf '%.0s-' {1..73}; echo
+          cat /tmp/coverage_table.txt
+          printf '%.0s-' {1..73}; echo
+          awk -v lf="$TOTAL_LF" -v lh="$TOTAL_LH" 'BEGIN{
+            miss = lf - lh
+            cover = (lf > 0) ? (lh / lf * 100) : 0
+            printf "%-55s %6d %6d %5.2f%%\n", "TOTAL", lf, miss, cover
+            if (cover < 80) {
+              print ""
+              print "Cobertura por debajo del 80% requerido."
               exit 1
+            } else {
+              printf "\nRequired test coverage of 80%% reached. Total coverage: %.2f%%\n", cover
             }
           }'
