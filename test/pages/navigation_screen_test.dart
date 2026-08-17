@@ -82,6 +82,11 @@ void main() {
     when(() => tts.setLanguage(any())).thenAnswer((_) async => 1);
     when(() => tts.setSpeechRate(any())).thenAnswer((_) async => 1);
     when(() => tts.setVolume(any())).thenAnswer((_) async => 1);
+    when(() => tts.awaitSpeakCompletion(any())).thenAnswer((_) async => 1);
+    when(() => tts.setStartHandler(any())).thenReturn(null);
+    when(() => tts.setCompletionHandler(any())).thenReturn(null);
+    when(() => tts.setCancelHandler(any())).thenReturn(null);
+    when(() => tts.setErrorHandler(any())).thenReturn(null);
     when(() => tts.speak(any())).thenAnswer((_) async => 1);
     when(() => tts.stop()).thenAnswer((_) async => 1);
   });

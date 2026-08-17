@@ -29,7 +29,7 @@ const double _kOnPathThresholdM = 15.0; // la línea azul solo se dibuja si est�
 const double _kFullLookaheadThresholdM = 6.0; // por debajo de esto se muestra el giro siguiente; por arriba, solo el tramo de entrada (evita que la alfombra se vea "doblada" cuando estás lejos del camino, ej. dentro de un aula)
 const double _kGoodAccuracyM = 10.0; // precisión GPS considerada confiable
 const double _kObstacleProximityThreshold = 0.35; // qué tan "grande" (cerca) debe verse un objeto centrado para alertar
-const Duration _kObstacleAnnounceCooldown = Duration(seconds: 4);
+const Duration _kObstacleAnnounceCooldown = Duration(seconds: 6);
 const Duration _kSurroundingsAnnounceCooldown = Duration(seconds: 8);
 const Duration _kLabelFrameInterval = Duration(milliseconds: 1500); // el etiquetado del entorno corre más espaciado que la detección de obstáculos
 
@@ -41,6 +41,13 @@ const Set<String> _kGroundLabels = {
   'floor', 'flooring', 'ground', 'street', 'curb', 'tarmac',
   'concrete', 'driveway', 'footpath', 'lane',
 };
+
+// Prioridad de los avisos por voz: un aviso de menor prioridad que lo que
+// se está diciendo ahora mismo se descarta (no se encola, no interrumpe);
+// uno de igual o mayor prioridad corta lo actual y pasa primero. Así una
+// alerta de obstáculo nunca se pierde detrás de la narración del entorno,
+// y esa narración nunca tapa una instrucción de giro real.
+enum _SpeechPriority { ambient, navigation, critical }
 
 class NavigationScreen extends StatefulWidget {
   final NavigationService? navService;
@@ -58,6 +65,8 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   late final _authService = widget.authService ?? AuthService();
   late final _tts = widget.tts ?? FlutterTts();
   bool _voiceGuidanceEnabled = true;
+  bool _ttsSpeaking = false;
+  _SpeechPriority? _currentSpeechPriority;
 
   bool _argsProcessed = false;
   Map<String, dynamic>? _destinationArg;
@@ -249,6 +258,20 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     await _tts.setLanguage('es-ES');
     await _tts.setSpeechRate(0.48);
     await _tts.setVolume(1.0);
+    await _tts.awaitSpeakCompletion(true);
+    _tts.setStartHandler(() => _ttsSpeaking = true);
+    _tts.setCompletionHandler(() {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
+    _tts.setCancelHandler(() {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
+    _tts.setErrorHandler((_) {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
   }
 
   Future<void> _loadVoicePreference() async {
@@ -260,8 +283,21 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     } catch (_) {}
   }
 
-  Future<void> _speak(String text) async {
-    if (_voiceGuidanceEnabled) await _tts.speak(text);
+  Future<void> _speak(String text, {_SpeechPriority priority = _SpeechPriority.navigation}) async {
+    if (!_voiceGuidanceEnabled) return;
+
+    if (_ttsSpeaking) {
+      final current = _currentSpeechPriority ?? _SpeechPriority.navigation;
+      if (priority.index < current.index) {
+        // Menos urgente que lo que ya se está diciendo: se descarta en vez
+        // de encolarse, para que no salga "tarde" y fuera de contexto.
+        return;
+      }
+      await _tts.stop();
+    }
+
+    _currentSpeechPriority = priority;
+    await _tts.speak(text);
   }
 
   Future<void> _initCamera() async {
@@ -351,7 +387,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     _lastObstacleAnnounce = now;
     final obstacle = closestObstacle(_obstacles, _frameSize);
     final where = obstacle != null ? positionLabel(obstacle.positionIn(_frameSize)) : 'adelante';
-    _speak('Cuidado, hay un obstáculo $where.');
+    _speak('Cuidado, hay un obstáculo $where.', priority: _SpeechPriority.critical);
   }
 
   void _maybeNarrateSurroundings() {
@@ -365,7 +401,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     final sentence = buildSurroundingsNarration(_surroundingLabels);
     if (sentence.isEmpty) return;
     _lastSurroundingsAnnounce = now;
-    _speak(sentence);
+    _speak(sentence, priority: _SpeechPriority.ambient);
   }
 
   Future<void> _startNavigation() async {
@@ -408,7 +444,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         _loading = false;
       });
 
-      await _speak('Ruta calculada. ${route.distanceText} hasta tu destino.');
+      await _speak('Ruta calculada. ${route.distanceText} hasta tu destino.', priority: _SpeechPriority.navigation);
       _listenPosition();
     } catch (e) {
       if (!mounted) return;
@@ -480,7 +516,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         setState(() => _currentStepIndex++);
         final activeInstruction = steps[_currentStepIndex].instruction;
         if (steps[_currentStepIndex].turn == 'left' || steps[_currentStepIndex].turn == 'right') {
-          _speak(activeInstruction);
+          _speak(activeInstruction, priority: _SpeechPriority.navigation);
         }
       } else {
         break;
@@ -497,7 +533,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         distToTarget <= _kAnnounceRadiusM &&
         !_announcedTurns.contains(upcomingIndex)) {
       _announcedTurns.add(upcomingIndex);
-      _speak('En ${distToTarget.round()} metros, ${upcomingStep.instruction.toLowerCase()}');
+      _speak('En ${distToTarget.round()} metros, ${upcomingStep.instruction.toLowerCase()}', priority: _SpeechPriority.navigation);
     }
 
     // ── Recalcular si el usuario se alejó demasiado del tramo actual ──
@@ -528,7 +564,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         _currentStepIndex = 0;
         _announcedTurns.clear();
       });
-      await _speak('Recalculando ruta.');
+      await _speak('Recalculando ruta.', priority: _SpeechPriority.navigation);
     } catch (_) {
       // Si falla el recálculo, se sigue guiando con la ruta anterior
     }
@@ -537,7 +573,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   Future<void> _handleArrival() async {
     setState(() => _arrived = true);
     _positionSub?.cancel();
-    await _speak('Llegaste a tu destino.');
+    await _speak('Llegaste a tu destino.', priority: _SpeechPriority.critical);
     if (_route != null) {
       try {
         await _navService.finishRoute(_route!.id);
