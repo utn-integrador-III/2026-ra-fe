@@ -93,8 +93,9 @@ lib/
 │   │   └── navigation_history_screen.dart # Historial de rutas navegadas
 │   └── navigation/
 │       ├── models/
-│       │   ├── route_models.dart # NavRoute, RoutePoint, RouteStep
-│       │   └── obstacle.dart     # Clasificación de obstáculos detectados
+│       │   ├── route_models.dart    # NavRoute, RoutePoint, RouteStep
+│       │   ├── obstacle.dart        # Clasificación de obstáculos detectados
+│       │   └── compass_tracker.dart # Suavizado de brújula + detección de interferencia magnética
 │       └── widgets/
 │           ├── ar_arrow_overlay.dart       # Flecha guía
 │           ├── ar_path_overlay.dart        # Línea/alfombra azul con perspectiva real
@@ -144,8 +145,11 @@ Conecta con:
 ---
 
 ### 👤 Perfil — `profile_screen.dart`
-- Header con nombre, correo y badge del usuario (datos reales del backend), con edición del nombre
-- Stats: rutas realizadas, favoritos, km promedio
+- Header con nombre, correo y badge del usuario, con edición del nombre (el
+  badge todavía es un texto fijo — "Explorer" — porque el backend no manda
+  ese dato en `/api/auth/profile`)
+- Stats: rutas realizadas y favoritos (reales, contados en el propio
+  frontend); el promedio de km todavía queda fijo en "0.0km", no se calcula
 - Lista de **recientes** desde `GET /api/history/places`
 - Lista de **favoritos**, con agregar (desde Búsqueda) y borrar
 - Sección de **historial de rutas** con acceso a la pantalla completa
@@ -275,16 +279,19 @@ await authService.logout();
 flutter test --coverage
 ```
 
-**80%+ de cobertura real** (líneas de código ejecutadas ÷ líneas de código,
+**96% de cobertura real** (líneas de código ejecutadas ÷ líneas de código,
 mismo criterio que `pytest-cov` en el backend — no cuenta comentarios ni
-líneas en blanco). Modelos, servicios (con `mocktail`, sin pegarle a la red
-real) y la mayoría de las pantallas, incluida la de navegación AR (cámara,
-GPS, brújula, sensores y permisos mockeados vía la interfaz de cada
-plugin). `main.dart` y `firebase_options.dart` (generado) quedan afuera del
-cálculo, igual que se excluye boilerplate de entrada en proyectos Python.
+líneas en blanco), sin ningún archivo por debajo del 80%. Modelos, servicios
+(con `mocktail`, sin pegarle a la red real) y todas las pantallas, incluida
+la de navegación AR (cámara, GPS, brújula, sensores y permisos mockeados vía
+la interfaz de cada plugin, incluyendo una cámara falsa que simula frames
+para probar la detección de obstáculos y el reconocimiento del entorno).
+`main.dart` y `firebase_options.dart` (generado) quedan afuera del cálculo,
+igual que se excluye boilerplate de entrada en proyectos Python.
 
 Se corre automáticamente junto con `flutter analyze` en GitHub Actions en
-cada push/PR, y **el job falla si la cobertura baja del 80%** — ver
+cada push a `main`/`dev-Ahian` y en cada PR hacia `main`, `Dev` o `QA`, y
+**el job falla si la cobertura baja del 80%** — ver
 `.github/workflows/frontend-tests.yml`.
 
 ---
@@ -306,9 +313,6 @@ cada push/PR, y **el job falla si la cobertura baja del 80%** — ver
 ```
 feature/offline-maps      → Caché de tiles para uso sin internet
 feature/push-notifications → Alertas y notificaciones
-feature/ar-coverage       → Subir la cobertura de tests de navigation_screen.dart
-                            y search_screen.dart (hoy ~63%, son las pantallas
-                            más grandes y las más atadas a plugins de hardware)
 ```
 
 Ya no están en esta lista porque ya están implementados: AR por sensores con
@@ -317,7 +321,11 @@ de prioridades, detección de obstáculos y reconocimiento del entorno con IA
 on-device (ML Kit — se evaluó YOLOv8/SegFormer pero son demasiado pesados
 para tiempo real en celular, ver commits de investigación), favoritos y
 preferencias con CRUD real, historial de navegación, panel de administración
-(web, ver `2026-ra-api`).
+(web, ver `2026-ra-api`), detección de interferencia magnética en la brújula
+(aviso cuando el celular está cerca de algo metálico/electrónico), nombre e
+ícono propios de la app (antes se instalaba como "2026_ra_fe" con el ícono
+por defecto de Flutter), y cobertura de tests por encima del 80% en todos
+los archivos (hoy 96% real, ver sección de Pruebas).
 
 ---
 
