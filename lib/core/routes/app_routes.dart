@@ -1,5 +1,5 @@
 class AppRoutes {
-  AppRoutes._();
+  AppRoutes._(); // coverage:ignore-line
 
   static const String appTitle = 'PathAR';
   static const String home = '/home';

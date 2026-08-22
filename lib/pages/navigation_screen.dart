@@ -15,6 +15,7 @@ import '../core/services/auth_service.dart';
 import '../core/services/perception_service.dart';
 import '../features/navigation/models/route_models.dart';
 import '../features/navigation/models/obstacle.dart';
+import '../features/navigation/models/compass_tracker.dart';
 import '../features/navigation/widgets/ar_arrow_overlay.dart';
 import '../features/navigation/widgets/ar_path_overlay.dart';
 import '../features/navigation/widgets/obstacle_boxes_overlay.dart';
@@ -53,8 +54,9 @@ class NavigationScreen extends StatefulWidget {
   final NavigationService? navService;
   final AuthService? authService;
   final FlutterTts? tts;
+  final PerceptionService? perception;
 
-  const NavigationScreen({super.key, this.navService, this.authService, this.tts});
+  const NavigationScreen({super.key, this.navService, this.authService, this.tts, this.perception});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -76,7 +78,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   CameraDescription? _cameraDescription;
   Future<void>? _cameraInitFuture;
 
-  final _perception = PerceptionService();
+  late final _perception = widget.perception ?? PerceptionService();
   List<DetectedObstacle> _obstacles = [];
   Size _frameSize = Size.zero;
   bool _obstacleAhead = false;
@@ -103,12 +105,9 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
   bool get _seesGround => _surroundingLabels.any((l) => _kGroundLabels.contains(l.toLowerCase()));
 
-  double _deviceHeading = 0;
-  double _smSinH = 0, _smCosH = 1; // suavizado circular de la brújula (evita saltos por ruido del magnetómetro)
-  bool _headingInit = false;
-  double? _lastRawHeading;
-  double _instabilityScore = 0; // sube con saltos bruscos crudos, baja con lecturas estables
-  bool get _compassUnstable => _instabilityScore >= 6;
+  final _compassTracker = CompassStabilityTracker();
+  double get _deviceHeading => _compassTracker.headingDeg;
+  bool get _compassUnstable => _compassTracker.unstable;
   bool get _gpsUnreliable => (_currentPosition?.accuracy ?? 0) > _kOnPathThresholdM;
   bool _hadPoorAccuracy = false; // si la ruta se armó/venía guiando con GPS malo, forzar un recálculo apenas mejore
   Position? _currentPosition;
@@ -134,7 +133,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     try {
       _compassSub = FlutterCompass.events?.listen((event) {
         if (event.heading != null && mounted) {
-          setState(() => _updateHeading(event.heading!));
+          setState(() => _compassTracker.update(event.heading!, accuracyDeg: event.accuracy));
         }
       });
     } catch (_) {
@@ -170,36 +169,6 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Horizonte nivelado'), duration: Duration(seconds: 1)),
     );
-  }
-
-  /// Suavizado circular (vía seno/coseno, no promedio directo de grados)
-  /// para que la flecha no tiemble con cada lectura ruidosa del
-  /// magnetómetro. No "arregla" una brújula mal calibrada — para eso
-  /// está el botón de calibración.
-  void _updateHeading(double newHeadingDeg) {
-    if (_lastRawHeading != null) {
-      double jump = (newHeadingDeg - _lastRawHeading!) % 360;
-      if (jump > 180) jump -= 360;
-      if (jump < -180) jump += 360;
-      // Un giro real de la persona también puede saltar así, pero si pasa
-      // seguido (varias lecturas seguidas saltando fuerte) es más probable
-      // que sea interferencia magnética que un giro genuino y sostenido.
-      _instabilityScore += jump.abs() > 40 ? 1 : -0.5;
-      _instabilityScore = _instabilityScore.clamp(0, 10);
-    }
-    _lastRawHeading = newHeadingDeg;
-
-    final rad = newHeadingDeg * math.pi / 180;
-    const alpha = 0.25;
-    if (!_headingInit) {
-      _smSinH = math.sin(rad);
-      _smCosH = math.cos(rad);
-      _headingInit = true;
-    } else {
-      _smSinH = _smSinH * (1 - alpha) + math.sin(rad) * alpha;
-      _smCosH = _smCosH * (1 - alpha) + math.cos(rad) * alpha;
-    }
-    _deviceHeading = (math.atan2(_smSinH, _smCosH) * 180 / math.pi + 360) % 360;
   }
 
   void _showCompassCalibration() {

@@ -7,6 +7,10 @@ import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import '../../features/navigation/models/obstacle.dart';
 
 class PerceptionService {
+  PerceptionService({ObjectDetector? objectDetector, ImageLabeler? imageLabeler})
+      : _objectDetectorInstance = objectDetector,
+        _imageLabelerInstance = imageLabeler;
+
   ObjectDetector? _objectDetectorInstance;
   ObjectDetector get _objectDetector => _objectDetectorInstance ??= ObjectDetector(
         options: ObjectDetectorOptions(
