@@ -1,0 +1,63 @@
+name: Frontend Tests
+
+on:
+  push:
+    branches: [main, dev-Ahian]
+  pull_request:
+    branches: [main, Dev, QA]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copiar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+          channel: "stable"
+
+      - name: Instalar dependencias
+        run: flutter pub get
+
+      - name: Analizar código estático
+        run: flutter analyze --no-fatal-infos
+
+      - name: Ejecutar pruebas unitarias con cobertura
+        run: flutter test --coverage
+
+      - name: Calcular porcentaje de cobertura
+        run: |
+          awk '
+            /^SF:/ { file = substr($0, 4) }
+            /^LF:/ { lf = substr($0, 4) + 0 }
+            /^LH:/ { lh = substr($0, 4) + 0 }
+            /^end_of_record/ {
+              miss = lf - lh
+              cover = (lf > 0) ? (lh / lf * 100) : 0
+              printf "%-55s %6d %6d %5.0f%%\n", file, lf, miss, cover
+            }
+          ' coverage/lcov.info | sort > /tmp/coverage_table.txt
+
+          TOTAL_LF=$(awk -F: '/^LF:/{s+=$2} END{print s}' coverage/lcov.info)
+          TOTAL_LH=$(awk -F: '/^LH:/{s+=$2} END{print s}' coverage/lcov.info)
+
+          echo "---------- coverage: flutter/dart ----------"
+          printf "%-55s %6s %6s %6s\n" "Name" "Stmts" "Miss" "Cover"
+          printf '%.0s-' {1..73}; echo
+          cat /tmp/coverage_table.txt
+          printf '%.0s-' {1..73}; echo
+          awk -v lf="$TOTAL_LF" -v lh="$TOTAL_LH" 'BEGIN{
+            miss = lf - lh
+            cover = (lf > 0) ? (lh / lf * 100) : 0
+            printf "%-55s %6d %6d %5.2f%%\n", "TOTAL", lf, miss, cover
+            if (cover < 80) {
+              print ""
+              print "Cobertura por debajo del 80% requerido."
+              exit 1
+            } else {
+              printf "\nRequired test coverage of 80%% reached. Total coverage: %.2f%%\n", cover
+            }
+          }'

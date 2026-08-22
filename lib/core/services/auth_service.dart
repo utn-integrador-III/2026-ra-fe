@@ -9,19 +9,25 @@ class AuthService {
   static String get _baseUrl => dotenv.env['API_URL'] ?? 'http://localhost:8000';
 
   late final Dio _dio;
+  late final FlutterSecureStorage _storage;
 
-  AuthService() {
-    _dio = Dio(BaseOptions(
+  AuthService({Dio? dio, FlutterSecureStorage? storage, GoogleSignIn? googleSignIn, FirebaseAuth? firebaseAuth}) {
+    _dio = dio ?? Dio(BaseOptions(
       baseUrl: _baseUrl,
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
       headers: {'Content-Type': 'application/json'},
     ));
+    _storage = storage ?? const FlutterSecureStorage();
+    _googleSignInInstance = googleSignIn;
+    _firebaseAuthInstance = firebaseAuth;
   }
 
-  final _storage = const FlutterSecureStorage();
-  final _firebaseAuth = FirebaseAuth.instance;
-  final _googleSignIn = GoogleSignIn();
+  FirebaseAuth? _firebaseAuthInstance;
+  FirebaseAuth get _firebaseAuth => _firebaseAuthInstance ??= FirebaseAuth.instance;
+
+  GoogleSignIn? _googleSignInInstance;
+  GoogleSignIn get _googleSignIn => _googleSignInInstance ??= GoogleSignIn();
 
   // ── Registro manual ──────────────────────────────────────────
   Future<Map<String, dynamic>> register({
@@ -126,6 +132,95 @@ class AuthService {
     } on DioException catch (e) {
       throw _parseError(e);
     }
+  }
+
+  // ── Editar perfil ───────────────────────────────────────────────
+  Future<Map<String, dynamic>> updateProfile({required String name}) async {
+    try {
+      final response = await _dio.put(
+        '/api/auth/profile',
+        data: {'name': name},
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  // ── Preferencias ─────────────────────────────────────────────
+  Future<Map<String, dynamic>> getPreferences() async {
+    try {
+      final response = await _dio.get('/api/preferences', options: await _authOptions());
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> updatePreferences({
+    bool? voiceGuidanceEnabled,
+    double? walkingSpeedMps,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/api/preferences',
+        data: {
+          if (voiceGuidanceEnabled != null) 'voice_guidance_enabled': voiceGuidanceEnabled,
+          if (walkingSpeedMps != null) 'walking_speed_mps': walkingSpeedMps,
+        },
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  // ── Favoritos ────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getFavorites() async {
+    try {
+      final response = await _dio.get('/api/favorites', options: await _authOptions());
+      return List<Map<String, dynamic>>.from(response.data['favorites']);
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> addFavorite({
+    required String name,
+    String? address,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/api/favorites',
+        data: {
+          'name': name,
+          'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+        },
+        options: await _authOptions(),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<void> deleteFavorite(String id) async {
+    try {
+      await _dio.delete('/api/favorites/$id', options: await _authOptions());
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<Options> _authOptions() async {
+    final token = await getToken();
+    return Options(headers: {'Authorization': 'Bearer $token'});
   }
 
   // ── Token storage ─────────────────────────────────────────────
