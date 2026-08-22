@@ -43,6 +43,7 @@ class NavRoute {
   final String status;
   final List<RoutePoint> points;
   final List<RouteStep> steps;
+  final DateTime? createdAt;
 
   const NavRoute({
     required this.id,
@@ -53,6 +54,7 @@ class NavRoute {
     required this.status,
     required this.points,
     required this.steps,
+    this.createdAt,
   });
 
   factory NavRoute.fromJson(Map<String, dynamic> json) => NavRoute(
@@ -68,5 +70,6 @@ class NavRoute {
         steps: (json['steps'] as List)
             .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
             .toList(),
+        createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
       );
 }

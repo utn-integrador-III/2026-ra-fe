@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:pathar_fe/core/services/auth_service.dart';
-import 'login_screen.dart';
-import 'register_screen.dart';
 
 class AuthTabsScreen extends StatefulWidget {
   /// Índice inicial: 0 = Crear cuenta, 1 = Iniciar sesión
   final int initialIndex;
+  final AuthService? authService;
 
-  const AuthTabsScreen({super.key, this.initialIndex = 0});
+  const AuthTabsScreen({super.key, this.initialIndex = 0, this.authService});
 
   @override
   State<AuthTabsScreen> createState() => _AuthTabsScreenState();
@@ -99,9 +98,9 @@ class _AuthTabsScreenState extends State<AuthTabsScreen>
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
-                      children: const [
-                        _RegisterContent(),
-                        _LoginContent(),
+                      children: [
+                        _RegisterContent(authService: widget.authService),
+                        _LoginContent(authService: widget.authService),
                       ],
                     ),
                   ),
@@ -177,7 +176,9 @@ class _AuthTabsScreenState extends State<AuthTabsScreen>
 // ── Contenido de Registro (sin header ni scaffold propio) ────────────
 
 class _RegisterContent extends StatefulWidget {
-  const _RegisterContent();
+  final AuthService? authService;
+
+  const _RegisterContent({this.authService});
 
   @override
   State<_RegisterContent> createState() => _RegisterContentState();
@@ -192,7 +193,7 @@ class _RegisterContentState extends State<_RegisterContent> {
   bool _obscureConfirm = true;
   bool _isLoading = false;
 
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
 
   static const Color _purple = Color(0xFF6C3EE8);
 
@@ -411,7 +412,9 @@ class _RegisterContentState extends State<_RegisterContent> {
 // ── Contenido de Login (sin header ni scaffold propio) ───────────────
 
 class _LoginContent extends StatefulWidget {
-  const _LoginContent();
+  final AuthService? authService;
+
+  const _LoginContent({this.authService});
 
   @override
   State<_LoginContent> createState() => _LoginContentState();
@@ -424,7 +427,7 @@ class _LoginContentState extends State<_LoginContent> {
   bool _isLoading = false;
   bool _isGoogleLoading = false;
 
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _labelGray = Color(0xFF9CA3AF);
