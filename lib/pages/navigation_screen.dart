@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -6,12 +7,18 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../core/services/navigation_service.dart';
 import '../core/services/location_service.dart';
+import '../core/services/auth_service.dart';
+import '../core/services/perception_service.dart';
 import '../features/navigation/models/route_models.dart';
+import '../features/navigation/models/obstacle.dart';
+import '../features/navigation/models/compass_tracker.dart';
 import '../features/navigation/widgets/ar_arrow_overlay.dart';
 import '../features/navigation/widgets/ar_path_overlay.dart';
+import '../features/navigation/widgets/obstacle_boxes_overlay.dart';
 
 // ── Umbrales de la navegación guiada ────────────────────────────────
 const double _kAdvanceRadiusM = 8.0; // a esta distancia se considera "llegó al nodo"
@@ -20,34 +27,89 @@ const double _kArrivalRadiusM = 10.0; // a esta distancia del destino final, "ll
 const double _kRecalculateThresholdM = 35.0; // si te alejás esto del tramo, recalcular
 const Duration _kRecalculateCooldown = Duration(seconds: 12);
 const double _kOnPathThresholdM = 15.0; // la línea azul solo se dibuja si estás así de cerca de una acera real
+const double _kFullLookaheadThresholdM = 6.0; // por debajo de esto se muestra el giro siguiente; por arriba, solo el tramo de entrada (evita que la alfombra se vea "doblada" cuando estás lejos del camino, ej. dentro de un aula)
+const double _kGoodAccuracyM = 10.0; // precisión GPS considerada confiable
+const double _kObstacleProximityThreshold = 0.35; // qué tan "grande" (cerca) debe verse un objeto centrado para alertar
+const Duration _kObstacleAnnounceCooldown = Duration(seconds: 6);
+const Duration _kSurroundingsAnnounceCooldown = Duration(seconds: 8);
+const Duration _kLabelFrameInterval = Duration(milliseconds: 1500); // el etiquetado del entorno corre más espaciado que la detección de obstáculos
+
+// Etiquetas de ML Kit Image Labeling que indican que la cámara está
+// mirando una superficie caminable — la línea AR solo se dibuja si la IA
+// reconoció alguna de estas recientemente, no solo por cercanía GPS.
+const Set<String> _kGroundLabels = {
+  'road', 'asphalt', 'sidewalk', 'path', 'walkway', 'pavement',
+  'floor', 'flooring', 'ground', 'street', 'curb', 'tarmac',
+  'concrete', 'driveway', 'footpath', 'lane',
+};
+
+// Prioridad de los avisos por voz: un aviso de menor prioridad que lo que
+// se está diciendo ahora mismo se descarta (no se encola, no interrumpe);
+// uno de igual o mayor prioridad corta lo actual y pasa primero. Así una
+// alerta de obstáculo nunca se pierde detrás de la narración del entorno,
+// y esa narración nunca tapa una instrucción de giro real.
+enum _SpeechPriority { ambient, navigation, critical }
 
 class NavigationScreen extends StatefulWidget {
-  const NavigationScreen({super.key});
+  final NavigationService? navService;
+  final AuthService? authService;
+  final FlutterTts? tts;
+  final PerceptionService? perception;
+
+  const NavigationScreen({super.key, this.navService, this.authService, this.tts, this.perception});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
 }
 
 class _NavigationScreenState extends State<NavigationScreen> with WidgetsBindingObserver {
-  final _navService = NavigationService();
-  final _tts = FlutterTts();
+  late final _navService = widget.navService ?? NavigationService();
+  late final _authService = widget.authService ?? AuthService();
+  late final _tts = widget.tts ?? FlutterTts();
+  bool _voiceGuidanceEnabled = true;
+  bool _ttsSpeaking = false;
+  _SpeechPriority? _currentSpeechPriority;
 
   bool _argsProcessed = false;
   Map<String, dynamic>? _destinationArg;
   Map<String, dynamic>? _originArg;
 
   CameraController? _cameraController;
+  CameraDescription? _cameraDescription;
   Future<void>? _cameraInitFuture;
+
+  late final _perception = widget.perception ?? PerceptionService();
+  List<DetectedObstacle> _obstacles = [];
+  Size _frameSize = Size.zero;
+  bool _obstacleAhead = false;
+  bool _processingObjectFrame = false;
+  bool _processingLabelFrame = false;
+  DateTime? _lastObstacleAnnounce;
+  DateTime? _lastLabelFrame;
+  DateTime? _lastSurroundingsAnnounce;
+  List<String> _surroundingLabels = [];
 
   StreamSubscription<CompassEvent>? _compassSub;
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<AccelerometerEvent>? _accelSub;
 
-  double _deviceHeading = 0;
-  double _smSinH = 0, _smCosH = 1; // suavizado circular de la brújula (evita saltos por ruido del magnetómetro)
-  bool _headingInit = false;
-  double? _lastRawHeading;
-  double _instabilityScore = 0; // sube con saltos bruscos crudos, baja con lecturas estables
-  bool get _compassUnstable => _instabilityScore >= 6;
+  // Inclinación (pitch) del teléfono, relativa a como estaba al calibrar —
+  // se usa para que la línea AR se pegue al piso real en vez de una posición
+  // fija en pantalla. Si en el teléfono la línea reacciona al revés al
+  // inclinar la cámara (sube cuando debería bajar), invertir este signo.
+  static const double _kPitchSign = 1.0;
+  double _rawPitchDeg = 0;
+  double _pitchBaselineDeg = 0;
+  bool _pitchCalibrated = false;
+  double get _devicePitchDeg => _kPitchSign * (_rawPitchDeg - _pitchBaselineDeg);
+
+  bool get _seesGround => _surroundingLabels.any((l) => _kGroundLabels.contains(l.toLowerCase()));
+
+  final _compassTracker = CompassStabilityTracker();
+  double get _deviceHeading => _compassTracker.headingDeg;
+  bool get _compassUnstable => _compassTracker.unstable;
+  bool get _gpsUnreliable => (_currentPosition?.accuracy ?? 0) > _kOnPathThresholdM;
+  bool _hadPoorAccuracy = false; // si la ruta se armó/venía guiando con GPS malo, forzar un recálculo apenas mejore
   Position? _currentPosition;
   double? _smLat; // posición suavizada (reduce el salto/jitter del GPS crudo)
   double? _smLng;
@@ -66,42 +128,47 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initTts();
+    _loadVoicePreference();
     _initCamera();
-    _compassSub = FlutterCompass.events?.listen((event) {
-      if (event.heading != null && mounted) {
-        setState(() => _updateHeading(event.heading!));
-      }
+    try {
+      _compassSub = FlutterCompass.events?.listen((event) {
+        if (event.heading != null && mounted) {
+          setState(() => _compassTracker.update(event.heading!, accuracyDeg: event.accuracy));
+        }
+      });
+    } catch (_) {
+      // Sin brújula disponible (p.ej. algunos emuladores) -> se sigue
+      // guiando sin rumbo, la flecha simplemente no rota.
+    }
+    _accelSub = accelerometerEventStream().listen((event) {
+      if (!mounted) return;
+      final raw = math.atan2(event.z, event.y) * 180 / math.pi;
+      setState(() {
+        if (!_pitchCalibrated) {
+          // Primera lectura real: se toma como "cero" (cómo sostenías el
+          // teléfono al empezar a navegar), en vez de asumir un ángulo fijo.
+          _rawPitchDeg = raw;
+          _pitchBaselineDeg = raw;
+          _pitchCalibrated = true;
+        } else {
+          // El acelerómetro solo es ruidoso lectura a lectura; sin este
+          // suavizado la línea AR tiembla todo el tiempo aunque el teléfono
+          // esté quieto (mismo truco que ya se usa para brújula y GPS).
+          const alpha = 0.12;
+          _rawPitchDeg = _rawPitchDeg * (1 - alpha) + raw * alpha;
+        }
+      });
     });
   }
 
-  /// Suavizado circular (vía seno/coseno, no promedio directo de grados)
-  /// para que la flecha no tiemble con cada lectura ruidosa del
-  /// magnetómetro. No "arregla" una brújula mal calibrada — para eso
-  /// está el botón de calibración.
-  void _updateHeading(double newHeadingDeg) {
-    if (_lastRawHeading != null) {
-      double jump = (newHeadingDeg - _lastRawHeading!) % 360;
-      if (jump > 180) jump -= 360;
-      if (jump < -180) jump += 360;
-      // Un giro real de la persona también puede saltar así, pero si pasa
-      // seguido (varias lecturas seguidas saltando fuerte) es más probable
-      // que sea interferencia magnética que un giro genuino y sostenido.
-      _instabilityScore += jump.abs() > 40 ? 1 : -0.5;
-      _instabilityScore = _instabilityScore.clamp(0, 10);
-    }
-    _lastRawHeading = newHeadingDeg;
-
-    final rad = newHeadingDeg * math.pi / 180;
-    const alpha = 0.25;
-    if (!_headingInit) {
-      _smSinH = math.sin(rad);
-      _smCosH = math.cos(rad);
-      _headingInit = true;
-    } else {
-      _smSinH = _smSinH * (1 - alpha) + math.sin(rad) * alpha;
-      _smCosH = _smCosH * (1 - alpha) + math.cos(rad) * alpha;
-    }
-    _deviceHeading = (math.atan2(_smSinH, _smCosH) * 180 / math.pi + 360) % 360;
+  /// Vuelve a tomar la inclinación actual del teléfono como referencia
+  /// "horizontal" — usar si la línea AR quedó desalineada del piso después
+  /// de cambiar cómo sostenés el teléfono.
+  void _calibratePitch() {
+    setState(() => _pitchBaselineDeg = _rawPitchDeg);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Horizonte nivelado'), duration: Duration(seconds: 1)),
+    );
   }
 
   void _showCompassCalibration() {
@@ -160,10 +227,55 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     await _tts.setLanguage('es-ES');
     await _tts.setSpeechRate(0.48);
     await _tts.setVolume(1.0);
+    await _tts.awaitSpeakCompletion(true);
+    _tts.setStartHandler(() => _ttsSpeaking = true);
+    _tts.setCompletionHandler(() {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
+    _tts.setCancelHandler(() {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
+    _tts.setErrorHandler((_) {
+      _ttsSpeaking = false;
+      _currentSpeechPriority = null;
+    });
+  }
+
+  Future<void> _loadVoicePreference() async {
+    try {
+      final prefs = await _authService.getPreferences();
+      if (mounted) {
+        setState(() => _voiceGuidanceEnabled = prefs['voice_guidance_enabled'] ?? true);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _speak(String text, {_SpeechPriority priority = _SpeechPriority.navigation}) async {
+    if (!_voiceGuidanceEnabled) return;
+
+    if (_ttsSpeaking) {
+      final current = _currentSpeechPriority ?? _SpeechPriority.navigation;
+      if (priority.index < current.index) {
+        // Menos urgente que lo que ya se está diciendo: se descarta en vez
+        // de encolarse, para que no salga "tarde" y fuera de contexto.
+        return;
+      }
+      await _tts.stop();
+    }
+
+    _currentSpeechPriority = priority;
+    await _tts.speak(text);
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.request();
+    } catch (_) {
+      return;
+    }
     if (!status.isGranted) return;
 
     try {
@@ -173,7 +285,15 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      _cameraController = CameraController(backCamera, ResolutionPreset.high, enableAudio: false);
+      _cameraDescription = backCamera;
+      _cameraController = CameraController(
+        backCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+        // La IA de percepción (ML Kit) necesita un formato de un solo plano;
+        // el resto de la app (preview) no se ve afectado por esto.
+        imageFormatGroup: Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
+      );
       _cameraInitFuture = _cameraController!.initialize();
       await _cameraInitFuture;
       try {
@@ -183,10 +303,74 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         // Algunos dispositivos no soportan cambiar el modo manualmente; se
         // queda con el default del sistema, que igual suele ser auto.
       }
+      try {
+        await _cameraController!.startImageStream(_onCameraFrame);
+      } catch (_) {
+        // Si el stream de frames falla, la navegación sigue sin IA de percepción
+      }
       if (mounted) setState(() {});
     } catch (_) {
       // Sin cámara disponible (p.ej. emulador) -> queda el fondo oscuro de respaldo
     }
+  }
+
+  void _onCameraFrame(CameraImage image) {
+    if (_cameraDescription == null || !mounted) return;
+    _frameSize = Size(image.width.toDouble(), image.height.toDouble());
+    final inputImage = _perception.inputImageFromCameraImage(image, _cameraDescription!);
+    if (inputImage == null) return;
+
+    if (!_processingObjectFrame) {
+      _processingObjectFrame = true;
+      _perception.detectObstacles(inputImage).then((obstacles) {
+        if (!mounted) return;
+        setState(() => _obstacles = obstacles);
+        _evaluateDanger();
+      }).catchError((_) {}).whenComplete(() => _processingObjectFrame = false);
+    }
+
+    final now = DateTime.now();
+    final dueForLabeling = _lastLabelFrame == null || now.difference(_lastLabelFrame!) > _kLabelFrameInterval;
+    if (!_processingLabelFrame && dueForLabeling) {
+      _processingLabelFrame = true;
+      _lastLabelFrame = now;
+      _perception.labelSurroundings(inputImage).then((labels) {
+        if (!mounted) return;
+        _surroundingLabels = labels;
+        _maybeNarrateSurroundings();
+      }).catchError((_) {}).whenComplete(() => _processingLabelFrame = false);
+    }
+  }
+
+  void _evaluateDanger() {
+    final danger = anyDanger(_obstacles, _frameSize, proximityThreshold: _kObstacleProximityThreshold);
+    if (danger != _obstacleAhead && mounted) {
+      setState(() => _obstacleAhead = danger);
+    }
+    if (!danger) return;
+
+    final now = DateTime.now();
+    if (_lastObstacleAnnounce != null && now.difference(_lastObstacleAnnounce!) < _kObstacleAnnounceCooldown) {
+      return;
+    }
+    _lastObstacleAnnounce = now;
+    final obstacle = closestObstacle(_obstacles, _frameSize);
+    final where = obstacle != null ? positionLabel(obstacle.positionIn(_frameSize)) : 'adelante';
+    _speak('Cuidado, hay un obstáculo $where.', priority: _SpeechPriority.critical);
+  }
+
+  void _maybeNarrateSurroundings() {
+    // No interrumpir una alerta de obstáculo con la narración del entorno.
+    if (_obstacleAhead || _surroundingLabels.isEmpty) return;
+    final now = DateTime.now();
+    if (_lastSurroundingsAnnounce != null &&
+        now.difference(_lastSurroundingsAnnounce!) < _kSurroundingsAnnounceCooldown) {
+      return;
+    }
+    final sentence = buildSurroundingsNarration(_surroundingLabels);
+    if (sentence.isEmpty) return;
+    _lastSurroundingsAnnounce = now;
+    _speak(sentence, priority: _SpeechPriority.ambient);
   }
 
   Future<void> _startNavigation() async {
@@ -229,7 +413,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         _loading = false;
       });
 
-      await _tts.speak('Ruta calculada. ${route.distanceText} hasta tu destino.');
+      await _speak('Ruta calculada. ${route.distanceText} hasta tu destino.', priority: _SpeechPriority.navigation);
       _listenPosition();
     } catch (e) {
       if (!mounted) return;
@@ -267,6 +451,21 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
 
     setState(() => _currentPosition = pos);
 
+    // Si la ruta se pidió (o se venía guiando) con GPS poco confiable —
+    // típico dentro de un edificio— y la señal recién mejoró de golpe al
+    // salir, el tramo/giro inicial puede haber quedado mal calculado con
+    // esa posición de origen imprecisa. En vez de esperar a que "te alejaste
+    // del tramo" lo note solo, forzamos un recálculo apenas la precisión
+    // vuelve a ser confiable.
+    if (pos.accuracy > _kOnPathThresholdM) {
+      _hadPoorAccuracy = true;
+    } else if (_hadPoorAccuracy && pos.accuracy <= _kGoodAccuracyM) {
+      _hadPoorAccuracy = false;
+      _lastRecalculate = DateTime.now();
+      _recalculate(lat, lng);
+      return;
+    }
+
     final points = _route!.points;
     final steps = _route!.steps;
 
@@ -286,7 +485,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         setState(() => _currentStepIndex++);
         final activeInstruction = steps[_currentStepIndex].instruction;
         if (steps[_currentStepIndex].turn == 'left' || steps[_currentStepIndex].turn == 'right') {
-          _tts.speak(activeInstruction);
+          _speak(activeInstruction, priority: _SpeechPriority.navigation);
         }
       } else {
         break;
@@ -303,7 +502,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         distToTarget <= _kAnnounceRadiusM &&
         !_announcedTurns.contains(upcomingIndex)) {
       _announcedTurns.add(upcomingIndex);
-      _tts.speak('En ${distToTarget.round()} metros, ${upcomingStep.instruction.toLowerCase()}');
+      _speak('En ${distToTarget.round()} metros, ${upcomingStep.instruction.toLowerCase()}', priority: _SpeechPriority.navigation);
     }
 
     // ── Recalcular si el usuario se alejó demasiado del tramo actual ──
@@ -334,7 +533,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         _currentStepIndex = 0;
         _announcedTurns.clear();
       });
-      await _tts.speak('Recalculando ruta.');
+      await _speak('Recalculando ruta.', priority: _SpeechPriority.navigation);
     } catch (_) {
       // Si falla el recálculo, se sigue guiando con la ruta anterior
     }
@@ -343,7 +542,7 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
   Future<void> _handleArrival() async {
     setState(() => _arrived = true);
     _positionSub?.cancel();
-    await _tts.speak('Llegaste a tu destino.');
+    await _speak('Llegaste a tu destino.', priority: _SpeechPriority.critical);
     if (_route != null) {
       try {
         await _navService.finishRoute(_route!.id);
@@ -413,7 +612,14 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     return diff;
   }
 
+  bool _exiting = false;
+
   Future<void> _exitNavigation() async {
+    // Sin este guard, un doble toque en la X (algo común mientras se espera
+    // la respuesta de red) dispara dos Navigator.pop() casi simultáneos y
+    // el segundo choca contra la transición del primero (_debugLocked).
+    if (_exiting) return;
+    _exiting = true;
     if (_route != null && !_arrived) {
       try {
         await _navService.finishRoute(_route!.id);
@@ -427,7 +633,9 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
     WidgetsBinding.instance.removeObserver(this);
     _compassSub?.cancel();
     _positionSub?.cancel();
+    _accelSub?.cancel();
     _cameraController?.dispose();
+    _perception.dispose();
     _tts.stop();
     super.dispose();
   }
@@ -503,15 +711,29 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
         else
           Container(color: const Color(0xFF111318)),
 
-        // ── Línea/alfombra azul sobre el camino (solo si estás cerca de una acera real) ──
+        // ── Línea/alfombra azul sobre el camino (cerca de una acera real Y la
+        // IA reconoce piso/vereda en cámara ahora mismo, no solo por GPS) ──
         if (_route != null && _smLat != null && _smLng != null && !_arrived &&
-            _distanceToRouteM() <= _kOnPathThresholdM)
+            _distanceToRouteM() <= _kOnPathThresholdM && _seesGround)
           ArPathOverlay(
             currentLat: _smLat!,
             currentLng: _smLng!,
             deviceHeadingDeg: _deviceHeading,
-            pathPoints: _route!.points.sublist((_currentStepIndex + 1).clamp(0, _route!.points.length - 1)),
+            // Lejos del camino (ej. dentro de un aula): solo mostrar el tramo
+            // de entrada, recto, para no mezclar el rumbo hacia ese punto con
+            // el de un giro más adelante (eso es lo que se veía "doblado").
+            // Ya sobre el camino: mostrar el giro siguiente con más anticipación.
+            pathPoints: _route!.points
+                .sublist((_currentStepIndex + 1).clamp(0, _route!.points.length - 1))
+                .take(_distanceToRouteM() <= _kFullLookaheadThresholdM ? 3 : 1)
+                .toList(),
+            devicePitchDeg: _devicePitchDeg,
+            danger: _obstacleAhead,
           ),
+
+        // ── Cajas de la IA de percepción (obstáculos detectados) ──
+        if (_obstacles.isNotEmpty)
+          ObstacleBoxesOverlay(obstacles: _obstacles, frameSize: _frameSize),
 
         // ── Flecha guía ──
         ArArrowOverlay(
@@ -527,6 +749,8 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
               _circleButton(Icons.close, _exitNavigation),
               const SizedBox(width: 8),
               _circleButton(Icons.explore_outlined, _showCompassCalibration),
+              const SizedBox(width: 8),
+              _circleButton(Icons.center_focus_weak, _calibratePitch),
               const SizedBox(width: 8),
               Expanded(
                 child: Container(
@@ -547,31 +771,87 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
           ),
         ),
 
-        // ── Aviso de brújula inestable (interferencia magnética) ──
-        if (_compassUnstable)
+        // ── Avisos de confiabilidad (obstáculo IA, GPS pobre y/o brújula inestable) ──
+        if (_obstacleAhead || _gpsUnreliable || _compassUnstable)
           Positioned(
             top: 68, left: 12, right: 12,
-            child: GestureDetector(
-              onTap: _showCompassCalibration,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade800.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Brújula inestable (¿hay algo metálico/electrónico cerca?). Tocá para calibrar.',
-                        style: TextStyle(color: Colors.white, fontSize: 12.5),
+            child: Column(
+              children: [
+                if (_obstacleAhead)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade900.withOpacity(0.92),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Obstáculo detectado en el camino. Reducí la velocidad.',
+                              style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                // GPS y brújula dependen de señal satelital y del magnetómetro
+                // real del teléfono — adentro de un edificio (paredes, cerca
+                // de una laptop, etc.) ambos pueden fallar sin que sea un bug
+                // de la app; este aviso lo deja explícito en vez de dejar que
+                // la flecha/línea simplemente apunten "raro" sin explicación.
+                if (_gpsUnreliable)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade800.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.gps_not_fixed, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'GPS poco preciso para guiarte adentro de un edificio. Probá afuera, a cielo abierto.',
+                              style: TextStyle(color: Colors.white, fontSize: 12.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (_compassUnstable)
+                  GestureDetector(
+                    onTap: _showCompassCalibration,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade800.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Brújula inestable (¿hay algo metálico/electrónico cerca?). Tocá para calibrar.',
+                              style: TextStyle(color: Colors.white, fontSize: 12.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
 
@@ -620,9 +900,27 @@ class _NavigationScreenState extends State<NavigationScreen> with WidgetsBinding
                     child: Text(
                       'Precisión GPS: ±${_currentPosition!.accuracy.round()} m',
                       style: TextStyle(
-                        color: _currentPosition!.accuracy <= 10 ? Colors.greenAccent : Colors.amberAccent,
+                        color: _currentPosition!.accuracy <= _kGoodAccuracyM ? Colors.greenAccent : Colors.amberAccent,
                         fontSize: 11,
                       ),
+                    ),
+                  ),
+                if (_surroundingLabels.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.visibility_outlined, color: Colors.white54, size: 13),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'IA ve: ${_surroundingLabels.take(3).join(', ')}',
+                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],

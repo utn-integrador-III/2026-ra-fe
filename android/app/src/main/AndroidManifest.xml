@@ -8,7 +8,7 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
     <application
-        android:label="_2026_ra_fe"
+        android:label="PathAR"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

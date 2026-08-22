@@ -6,6 +6,7 @@ import 'pages/settings_screen.dart';
 import 'features/auth/screens/auth_tabs_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 import 'features/search/screens/search_screen.dart';
+import 'features/history/screens/navigation_history_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -23,6 +24,7 @@ class App extends StatelessWidget {
         AppRoutes.navigation: (_) => const NavigationScreen(),
         AppRoutes.settings: (_) => const SettingsScreen(),
         AppRoutes.search: (_) => const SearchScreen(),
+        AppRoutes.navigationHistory: (_) => const NavigationHistoryScreen(),
       },
     );
   }

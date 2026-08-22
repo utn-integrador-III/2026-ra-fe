@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/navigation_service.dart';
+import '../../../core/routes/app_routes.dart';
+import '../../navigation/models/route_models.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final AuthService? authService;
+  final NavigationService? navService;
+  final Dio? placesDio;
+
+  const ProfileScreen({super.key, this.authService, this.navService, this.placesDio});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
+  late final _navService = widget.navService ?? NavigationService();
 
   static const Color _purple = Color(0xFF6C3EE8);
   static const Color _lightPurple = Color(0xFFF0EDFB);
@@ -21,6 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _recents = [];
   List<Map<String, dynamic>> _favorites = [];
+  int _routesCount = 0;
   bool _isLoading = true;
   String? _error;
 
@@ -33,9 +42,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadData() async {
     try {
       final token = await _authService.getToken();
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:8000';
-      final dio = Dio(BaseOptions(
-        baseUrl: baseUrl,
+      final dio = widget.placesDio ?? Dio(BaseOptions(
+        baseUrl: dotenv.env['API_URL'] ?? 'http://localhost:8000',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -44,11 +52,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         receiveTimeout: const Duration(seconds: 10),
       ));
 
-      // Cargar perfil, recientes y favoritos en paralelo
       final results = await Future.wait([
         _authService.getProfile(),
         dio.get('/api/history/places').then((r) => r.data).catchError((_) => {'places': []}),
-        dio.get('/api/favorites').then((r) => r.data).catchError((_) => {'favorites': []}),
+        _authService.getFavorites().catchError((_) => <Map<String, dynamic>>[]),
+        _navService.getHistory().catchError((_) => <NavRoute>[]),
       ]);
 
       if (mounted) {
@@ -57,14 +65,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _recents = List<Map<String, dynamic>>.from(
             (results[1] as Map)['places'] ?? [],
           );
-          _favorites = List<Map<String, dynamic>>.from(
-            (results[2] as Map)['favorites'] ?? [],
-          );
+          _favorites = List<Map<String, dynamic>>.from(results[2] as List);
+          _routesCount = (results[3] as List).length;
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
+    }
+  }
+
+  Future<void> _editProfile() async {
+    final controller = TextEditingController(text: _profile?['name'] ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar perfil'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Nombre'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (newName == null || newName.isEmpty) return;
+    try {
+      await _authService.updateProfile(name: newName);
+      if (mounted) {
+        setState(() => _profile = {..._profile!, 'name': newName});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _deleteFavorite(String id) async {
+    try {
+      await _authService.deleteFavorite(id);
+      if (mounted) {
+        setState(() => _favorites.removeWhere((f) => f['id'] == id));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
   }
 
@@ -89,7 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               const Text('Mi perfil',
                                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1F2937))),
                               IconButton(
-                                onPressed: () {},
+                                onPressed: () => Navigator.pushNamed(context, AppRoutes.settings),
                                 icon: const Icon(Icons.settings_outlined, color: _gray),
                               ),
                             ],
@@ -150,6 +203,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ],
                                   ),
                                 ),
+                                IconButton(
+                                  onPressed: _editProfile,
+                                  icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
+                                ),
                               ],
                             ),
                           ),
@@ -162,7 +219,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                           child: Row(
                             children: [
-                              _statCard('${_recents.length}', 'Rutas'),
+                              _statCard('$_routesCount', 'Rutas'),
                               const SizedBox(width: 12),
                               _statCard('${_favorites.length}', 'Favoritos'),
                               const SizedBox(width: 12),
@@ -209,7 +266,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               const Text('Favoritos',
                                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937))),
                               GestureDetector(
-                                onTap: () {},
+                                onTap: () => Navigator.pushNamed(context, '/search'),
                                 child: const Text('+ Añadir',
                                   style: TextStyle(color: _purple, fontSize: 13, fontWeight: FontWeight.w500)),
                               ),
@@ -223,6 +280,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ? _emptyState(Icons.favorite_border, 'Aún no tenés favoritos', 'Guardá tus lugares frecuentes aquí')
                             : Column(
                                 children: _favorites.map((f) => _favoriteItem(f)).toList(),
+                              ),
+                      ),
+
+                      // ── Historial de rutas ────────────────────
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Historial de rutas',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937))),
+                              GestureDetector(
+                                onTap: () => Navigator.pushNamed(context, AppRoutes.navigationHistory),
+                                child: const Text('Ver todo',
+                                  style: TextStyle(color: _purple, fontSize: 13, fontWeight: FontWeight.w500)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      SliverToBoxAdapter(
+                        child: _routesCount == 0
+                            ? _emptyState(Icons.route_outlined, 'Todavía no navegaste ninguna ruta', 'Elegí un destino y comenzá a caminar')
+                            : Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                                child: Text('$_routesCount ruta${_routesCount == 1 ? '' : 's'} en tu historial',
+                                  style: const TextStyle(fontSize: 12, color: _gray)),
                               ),
                       ),
 
@@ -324,7 +410,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: _gray, size: 20),
+            IconButton(
+              onPressed: () => _deleteFavorite(item['id'] as String),
+              icon: const Icon(Icons.delete_outline, color: _gray, size: 20),
+            ),
           ],
         ),
       ),

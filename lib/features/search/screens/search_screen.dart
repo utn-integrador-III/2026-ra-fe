@@ -8,7 +8,10 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/services/location_service.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  final AuthService? authService;
+  final Dio? dio;
+
+  const SearchScreen({super.key, this.authService, this.dio});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -21,9 +24,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   final _searchController = TextEditingController();
   final _mapController = MapController();
-  final _authService = AuthService();
+  late final _authService = widget.authService ?? AuthService();
   final _sheetController = DraggableScrollableController();
-  final _dio = Dio(BaseOptions(
+  late final _dio = widget.dio ?? Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 15),
     headers: {'User-Agent': 'PathAR/1.0 (educational project)'},
@@ -329,6 +332,20 @@ class _SearchScreenState extends State<SearchScreen> {
         'lng': _currentLocation!.longitude,
       },
     });
+  }
+
+  Future<void> _addToFavorites(Map<String, dynamic> place) async {
+    try {
+      await _authService.addFavorite(
+        name: place['name'],
+        address: place['address'],
+        latitude: place['lat'],
+        longitude: place['lng'],
+      );
+      if (mounted) _showSnackbar('${place['name']} agregado a favoritos');
+    } catch (e) {
+      if (mounted) _showSnackbar('No se pudo agregar a favoritos');
+    }
   }
 
   // Escala de marcadores según el zoom: puntos chicos alejado, pines completos cerca.
@@ -889,6 +906,13 @@ class _SearchScreenState extends State<SearchScreen> {
                   style: const TextStyle(fontSize: 10, color: _gray),
                 ),
               ],
+            ),
+            IconButton(
+              onPressed: () => _addToFavorites(place),
+              icon: const Icon(Icons.favorite_border, size: 18, color: _gray),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.only(left: 6),
             ),
           ],
         ),
